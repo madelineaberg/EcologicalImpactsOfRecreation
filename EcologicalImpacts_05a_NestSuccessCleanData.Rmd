@@ -1,0 +1,323 @@
+---
+title: "Manuscript_NestSuccess"
+author: "Madeline Aberg"
+date: '2022-07-02'
+output: pdf_document
+---
+# Clean data for HOLA & LBCU nest success analysis
+# 29 April 2024
+
+#### LBCU - model is still messed up, think rec specifically is doing it... 
+#### plots are still not really working - shouldn't be out of the 0 to 1 range??? 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(lubridate)
+library(lme4)
+library(MuMIn)
+library(car)
+library(jtools)
+library(MASS)
+```
+
+# Clean Data
+## HOLA 
+```{r}
+#nest info
+nests20 <- read.csv(here::here("datatemp/original/HOLA2020_nesthab.csv")) # already combined with nest hab
+nests21 <- read.csv(here::here("datatemp/original/HOLA2021.csv")) # needs to be combined with nest hab
+
+# combine 2021 nests & nest hab data
+source("EcologicalImpacts_05b_NestHabClean.R", local = knitr::knit_global())
+nesthab2021_nestonly <- nesthab2021 %>% filter(grepl("Nest|nest", HabID))
+nests21 <- nests21 %>% mutate(
+  ID = case_when(
+    Location == "CinderCone" ~ paste0("CC-", ID), 
+    Location == "PleasantValley" ~ paste0("PV-", ID)))
+nests2021 <- left_join(nests21, nesthab2021_nestonly, by = "ID")
+#nests2021 <- nests2021[-c(26,27,31),]
+
+# combine 2020 & 2021
+nests20$Clutch <- as.integer(nests20$Clutch)
+nests20$From_N <- as.integer(nests20$From_N)
+nests2021$From_N <- as.integer(nests2021$From_N)
+nests20$From_E <- as.integer(nests20$From_E)
+nests2021$From_E <- as.integer(nests2021$From_E)
+nests20$From_W <- as.integer(nests20$From_W)
+nests2021$From_W <- as.integer(nests2021$From_W)
+nests20$From_S <- as.integer(nests20$From_S)
+nests2021$From_S <- as.integer(nests2021$From_S)
+nests20$Aspect <- as.integer(nests20$Aspect)
+nests20$Consp_Nearest <- as.integer(nests20$Consp_Nearest)
+nests2021$Consp_Nearest <- as.integer(nests2021$Consp_Nearest)
+nests20$CowP_Nearest <- as.integer(nests20$CowP_Nearest)
+nests2021$CowP_Nearest <- as.integer(nests2021$CowP_Nearest)
+nests20$Nest_depth <- as.integer(nests20$Nest_depth)
+nests2021$Nest_depth <- as.integer(nests2021$Nest_depth)
+nests20$Nest_length <- as.integer(nests20$Nest_length)
+nests2021$Nest_length <- as.integer(nests2021$Nest_length)
+
+nests2021 <- nests2021 %>% rename(Year = Year.x)
+nests2021 <- nests2021 %>% rename(Site = Site.x)
+nests2021 <- nests2021 %>% rename(Location = Location.x)
+
+HOLAnests <- full_join(nests20, nests2021)
+
+#### Response variable ####
+# Exposure days (link function)
+HOLAnests$end <- as.Date(HOLAnests$EndDate)
+HOLAnests$endDOY <- yday(HOLAnests$end)
+HOLAnests$found <- as.Date(HOLAnests$DateFound)
+HOLAnests$foundDOY <- yday(HOLAnests$found)
+HOLAnests <- HOLAnests %>% mutate(ExposureDays = endDOY - foundDOY)
+
+# Survival
+  HOLAnests$surv.num <- ifelse(HOLAnests$Fate.2 == "successful", 1, ifelse(HOLAnests$Fate.2 == "failed", 0, NA))
+  HOLAnests$surv <- as.factor(HOLAnests$surv.num)
+
+#### Predictors ####
+# recreation
+rec <- read.csv(here::here("datatemp/original/HOLArec.csv"))
+
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV3" = "PV-3")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "DoubleTake" = "CC-DoubleTake")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Kevin" = "CC-Kevin")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV11" = "PV-11")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV20" = "PV-20")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV21" = "PV-21")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV7" = "PV-7")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Signpost" = "CC-Signpost")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Crown" = "CC-Crown")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "ApplePie" = "CC-ApplePie")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Roadside" = "CC-Roadside")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "MayDay" = "CC-MayDay")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "AngryCurlew" = "CC-AngryCurlew")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Peppers" = "CC-Peppers")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "OnX" = "CC-OnX")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV24" = "PV-24")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Halfway" = "CC-Halfway")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV10" = "PV-10")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Salsola" = "CC-Salsola")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Vanish" = "CC-Vanish")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV8" = "PV-8")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Area51" = "CC-Area51")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV14" = "PV-14")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Thrasher" = "CC-Thrasher")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV22" = "PV-22")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV2" = "PV-2")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Celebrity" = "CC-Celebrity")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Three" = "CC-Thrasher")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Thrasher" = "CC-Three")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV6" = "PV-6")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV4" = "PV-4")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "ClosingTime" = "CC-ClosingTime")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Mhaq" = "CC-Mhaq")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "Father" = "CC-Father")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "GretelsNest" = "CC-GretelNest")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV19" = "PV-19")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV23" = "PV-23")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV15" = "PV-15")
+HOLAnests$ID <- dplyr::recode(HOLAnests$ID, "PV23" = "PV-23")
+
+rec <- rec %>% rename(ID = X)
+rec$ID <- dplyr::recode(rec$ID, "CC-AngryCurelw" = "CC-AngryCurlew")
+
+HOLAnests <- left_join(HOLAnests, rec)
+
+########################################################
+####### USING 500 m buffer for now #####
+HOLAnests <- HOLAnests %>% mutate(rec = case_when(
+    Year == 2020 ~ Buffer500m_2020, 
+    Year == 2021 ~ Buffer500m_2021))
+
+str(HOLAnests$rec) # numeric
+plot(HOLAnests$rec)
+
+# binary rec
+HOLAnests <- HOLAnests %>%
+  mutate(rec.binary = case_when(
+    Location == "CinderCone" ~ 0, 
+    Location == "PleasantValley" ~1))
+HOLAnests$rec.binary <- as.factor(HOLAnests$rec.binary)
+
+# initiation date 
+HOLAnests$InitiationDate <- as.Date(HOLAnests$InitiationDate)
+HOLAnests$InitiationDOY <- yday(HOLAnests$InitiationDate)
+
+# nest concealment
+# first need to determine total possible dots which differs depending on which method was used
+  HOLAnests <- mutate(HOLAnests, total_dots = 
+                        case_when(
+                          Toward_Type == "tennis ball" ~ 102,
+                          Toward_Type == "spiky ball" ~ 261,
+                          Toward_Type == "spike" ~ 261))
+                        
+  # calculating % concealed from above
+  HOLAnests <- mutate(HOLAnests, conceal_A = 1 - (Toward_A / total_dots))
+  # % concealed from the North 
+  HOLAnests <- mutate(HOLAnests, conceal_N = 1 - (Toward_N / total_dots))
+  # % concealed from the East
+  HOLAnests <- mutate(HOLAnests, conceal_E = 1 - (Toward_E / total_dots))
+  # % concealed from the South
+  HOLAnests <- mutate(HOLAnests, conceal_S = 1 - (Toward_S / total_dots))
+  # % concealed from the West
+  HOLAnests <- mutate(HOLAnests, conceal_W = 1 - (Toward_W / total_dots))
+  # add up % concealed 
+  HOLAnests <- mutate(HOLAnests, conceal_sum = conceal_A + conceal_N + conceal_E + conceal_S + conceal_W)
+
+# nest orientation (y/n)
+  HOLAnests$Nest_orient_to
+  HOLAnests$Nest_orient_degrees
+  HOLAnests <- mutate(HOLAnests,
+                        orientYN = case_when(
+                        Nest_orient_to == "single" | Nest_orient_to == "multiple" ~ 1,
+                        Nest_orient_to == "bare" | Nest_orient_to == "none" ~ 0
+                      ))
+  HOLAnests$orientYN <- HOLAnests$orientYN %>% replace(is.na(.), 0)
+  HOLAnests$orientYN <- as.factor(HOLAnests$orientYN)
+  
+# predator presence
+  HOLAnests <- mutate(HOLAnests, predator = GRSQ_num + Badger_num)
+
+# conspicuous objects 
+  HOLAnests <- mutate(HOLAnests, consp_total = Consp_Num + CowP_Num)
+  
+
+#### Year #### Using as fixed effect because only 2 levels
+  HOLAnests$Year <- as.factor(HOLAnests$Year)
+  HOLAnests$Year.n <- as.numeric(HOLAnests$Year)
+  HOLAnests <- HOLAnests %>% mutate(Year.cat = case_when(
+    Year == 2020 ~ "2020", Year == 2021 ~ "2021"
+  ))
+
+
+#### Filter so only active nests with nest hab data ####
+HOLAnests.Veg <- HOLAnests %>% filter(., Veg.yn == 1)
+HOLAnests.Active <- HOLAnests %>% filter(., Fate.2 == "successful" | Fate.2 == "failed")
+
+#### Standardize Predictors #### 
+stdize<-function(x) {(x-mean(x))/(2*sd(x))}  # function to put variables on the same scale - based on Andrew Gelman 2008 paper 
+
+HOLAnests.Veg$rec_std <- stdize(HOLAnests.Veg$rec)
+HOLAnests.Veg$initiate_std <- stdize(HOLAnests.Veg$InitiationDOY)
+HOLAnests.Veg$conceal_std <- stdize(HOLAnests.Veg$conceal_sum)
+HOLAnests.Veg$pred_std <- stdize(HOLAnests.Veg$predator)
+HOLAnests.Veg$consp_std <- stdize(HOLAnests.Veg$consp_total)
+
+HOLAnests.Active$rec_std <- stdize(HOLAnests.Active$rec)
+HOLAnests.Active$initiate_std <- stdize(HOLAnests.Active$InitiationDOY)
+```
+### Save HOLA
+```{r}
+write.csv(HOLAnests.Active, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/HOLA_NestSuccess_Clean_29April2024.csv")
+```
+
+## LBCU
+```{r}
+source("EcologicalImpacts_05c_LBCUClean.R", local = knitr::knit_global())
+
+# Filter out TMS farm (out of the study boundary)
+LBCUnests <- LBCUnests %>% filter(Subsite != "Twenty Mile South Farm")
+
+#### Response variable ####
+# Exposure days (link function)
+# already in dataset
+LBCUnests$exposure_days <- as.numeric(LBCUnests$exposure_days) 
+
+# calculate like w/ hola (doesn't seem to be working correctly - use dataset)
+LBCUnests <- LBCUnests %>% mutate(end_date = case_when(
+ fate ==  "hatch" | fate =="Hatch" ~ hatch_date,
+ fate == "fail" | fate == "Fail" ~ date_fail))
+LBCUnests <- LBCUnests %>% mutate(exposure_days2 = end_date - date_found)
+
+LBCUnests <- LBCUnests %>% drop_na(exposure_days)
+
+# Survival
+LBCUnests <- LBCUnests %>% mutate(surv.num = case_when(
+    fate == "fail" | fate == "Fail" ~ 0,
+    fate == "hatch" | fate == "Hatch" ~1))
+  
+LBCUnests$surv <- as.factor(LBCUnests$surv.num)
+
+#### Predictors ####
+# Recreation -  within a 500m radius of the nests
+LBCUrec <- read.csv(here::here("datatemp/original/LBCUrec.csv"))
+LBCUrec <- LBCUrec %>% rename(Nest.Name = X)
+LBCUnests <- left_join(LBCUnests, LBCUrec)
+
+LBCUnests <- LBCUnests %>% mutate(NESTrec = case_when(
+    year == 2019 ~ Buffer500m_2019,
+    year == 2020 ~ Buffer500m_2020, 
+    year == 2021 ~ Buffer500m_2021))
+LBCUnests$NESTrec <-LBCUnests$NESTrec %>% replace(is.na(.), 0)
+str(LBCUnests$NESTrec)
+plot(LBCUnests$NESTrec)
+
+# initiation date
+LBCUnests$initiationDOY <- yday(LBCUnests$initiation_date)
+
+# nest concealment
+  # calculating % concealed from above (20 squares max)
+  # % concealed from the North 
+  LBCUnests <- mutate(LBCUnests, conceal_N = 1 - (Toward_N / 20))
+  # % concealed from the East
+  LBCUnests$Toward_E <- dplyr::recode(LBCUnests$Toward_E, `185` = 18.5L) # one value is missing decimal point
+  LBCUnests <- mutate(LBCUnests, conceal_E = 1 - (Toward_E / 20))
+  # % concealed from the South
+  LBCUnests <- mutate(LBCUnests, conceal_S = 1 - (Toward_S / 20))
+  # % concealed from the West
+  LBCUnests <- mutate(LBCUnests, conceal_W = 1 - (Toward_W / 20))
+  # add up % concealed 
+  LBCUnests <- mutate(LBCUnests, conceal_sum = conceal_N + conceal_E + conceal_S + conceal_W)
+
+  LBCUnests$conceal_sum
+  
+# view from nest
+  LBCUnests$From_E <- as.numeric(LBCUnests$From_E..cm.)
+  LBCUnests$From_N <- as.numeric(LBCUnests$From_N..cm.)
+  LBCUnests$From_S <- as.numeric(LBCUnests$From_S..cm.)
+  LBCUnests$From_W <- as.numeric(LBCUnests$From_W..cm.)
+  LBCUnests <- mutate(LBCUnests, from_avg = (From_E + From_N + From_W + From_S)/4)
+  LBCUnests$from_avg
+
+# predator presence - nearest perch for aerial predators # lots of NAs though
+  LBCUnests$PerchDist <- as.numeric(LBCUnests$Perch.1.Distance..m.)
+
+# conspicuous objects 
+  LBCUnests$CowPies <- as.numeric(LBCUnests$X..Cow.pies)
+  LBCUnests$CowPies <- LBCUnests$CowPies %>% replace(is.na(.), 0)
+  LBCUnests$ConspObj <- as.numeric(LBCUnests$X..Conspicuous.Objects)
+  LBCUnests$ConspObj <- LBCUnests$ConspObj %>% replace(is.na(.), 0)
+  LBCUnests <- mutate(LBCUnests, consp_total = CowPies + ConspObj)
+  
+  LBCUnests$consp_total
+  
+# distance to raod 
+  LBCUnests$RoadDist <- as.numeric(LBCUnests$Road.1.Distance..m.)
+  LBCUnests$RoadDist <- LBCUnests$RoadDist %>% replace(is.na(.), 400) #using this for now.. 
+  
+# Grazed - binary
+  LBCUnests <- LBCUnests %>% mutate(Grazed = case_when(
+    Grazed.while.nest.active..Yes.No == "Yes" | Grazed.while.nest.active..Yes.No == "YES" ~ 1, 
+    Grazed.while.nest.active..Yes.No == "No" | Grazed.while.nest.active..Yes.No == "NO" ~0))
+  LBCUnests$Grazed <- LBCUnests$Grazed %>% replace(is.na(.), 0) # for now... 
+  LBCUnests$Grazed <- as.factor(LBCUnests$Grazed)
+
+# year  
+LBCUnests$year <- as.factor(LBCUnests$year)
+  
+#### Standardize Predictors #### 
+stdize<-function(x) {(x-mean(x, na.rm = TRUE))/(2*sd(x, na.rm = TRUE))}  # function to put variables on the same scale - based on Andrew Gelman 2008 paper 
+
+LBCUnests$rec_std <- stdize(LBCUnests$NESTrec)
+LBCUnests$initiate_std <- stdize(LBCUnests$initiationDOY)
+LBCUnests$conceal_std <- stdize(LBCUnests$conceal_sum)
+LBCUnests$consp_std <- stdize(LBCUnests$consp_total)
+LBCUnests$road_std <- stdize(LBCUnests$RoadDist)
+```  
+### Save HOLA
+```{r}
+write.csv(LBCUnests, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/LBCU_NestSuccess_Clean_29April2024.csv")
+```
