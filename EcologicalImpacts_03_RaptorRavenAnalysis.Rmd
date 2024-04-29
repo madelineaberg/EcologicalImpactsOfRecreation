@@ -556,14 +556,14 @@ Lpred.rec$x <- c(1)
 FigRaven <- ggplot(data = Lpred.rec, mapping = aes(x=rec, y=Predicted,
                                              color = as.factor(x), 
                                              fill = as.factor(x)))+
-  geom_line()+
+  geom_line(size = 1)+
   geom_ribbon(aes(ymin = lower, ymax=upper), alpha = 0.1)+
   scale_fill_manual(values="grey40")+
   scale_color_manual(values="grey40") + 
   theme_classic() + 
   theme(legend.position = "none")+
-  labs(title = "", x = "Recreation intensity", y = "Predicted ravens/"~km^2)
-  #theme(text=element_text(family="Times New Roman", size=14))
+  labs(title = "", x = "Recreation intensity", y = "Predicted ravens/"~km^2)+
+  theme(text=element_text(family="Times New Roman", size=12))
 
 ggsave("C:/Users/Madeline/Desktop/NEWraven.jpg", width = 4, height = 2.5, units = "in", 
        dpi = 400)
@@ -584,15 +584,15 @@ Lpred.rec$x <- c(1)
 FigRaptor <- ggplot(data = Lpred.rec, mapping = aes(x=rec, y=Predicted,
                                              color = as.factor(x), 
                                              fill = as.factor(x)))+
-  geom_line()+
+  geom_line(size = 1)+
   #ylim(0,135)+
   geom_ribbon(aes(ymin = lower, ymax=upper), alpha = 0.1)+
   scale_fill_manual(values="grey40")+
   scale_color_manual(values="grey40") + 
   theme_classic() + 
   theme(legend.position = "none")+
-  labs(title = "", x = "Recreation intensity", y = "Predicted raptors/"~km^2)
- # theme(text=element_text(family="Times New Roman", size=14))
+  labs(title = "", x = "Recreation intensity", y = "Predicted raptors/"~km^2)+
+  theme(text=element_text(family="Times New Roman", size=12))
 
 ggsave("C:/Users/Madeline/Desktop/NEWraptor.jpg", width = 4, height = 2.5, units = "in", 
        dpi = 400)

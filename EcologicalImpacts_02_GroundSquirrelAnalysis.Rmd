@@ -336,7 +336,7 @@ library(gridExtra)
 
 
 
-### NEW - FEB 2024 - JWM revisions
+### Figure 
 ```{r}
 new.data <- data.frame(rec = rec.st, 
                        shrub.st = 0)
@@ -354,8 +354,8 @@ Fig4 <- ggplot(pred, aes(rec, Predicted,
   scale_color_manual(values="grey40") +
   theme_classic() + 
   labs(x = "Recreation intensity", y = "Predicted ground squirrels/ha")+
-  theme(legend.position = "none")
-  #theme(text=element_text(family="Times New Roman", size=14))
+  theme(legend.position = "none") +
+  theme(text=element_text(family="Times New Roman", size=12))
 
 Fig4
 
