@@ -1,0 +1,693 @@
+---
+title: "Manuscript_RaptorRaven"
+author: "Madeline Aberg"
+date: '2022-06-13'
+output: pdf_document
+---
+# Raptor & Raven Analysis
+# 29 April 2024
+
+# LAST UPDATED: 10 Feb 2024
+        # Change - ravens now using Poisson with no temp in detection model (raven.mod.p1)
+        # Change - rapotrs now not including random intercepts, no temp, Poisson (raptor.mod.p1)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(jtools)
+library(lubridate)
+library( unmarked ) # runs N-mixture models
+library( MuMIn ) # calculates pseudo-R^2
+library( AICcmodavg) # gof tests (Duarte et al. 2018)
+library( nmixgof ) # for evaluating N-mixture models gof tests (Knape et al. 2018)
+library(ubms)
+```
+
+# Overview
+
+## Data Collection
+These data were collected by Lucian Davis in the spring/summer of 2021 following the protocol designed by Lucian Davis, Rob Miller and Jay Carlisle. At each of our paired sites, we counted raptors, ravens, and mammalian scavengers on 8 survey days. Observers followed the same transect through 16 evenly spaced (4x4 grid, 250m between points) during each survey. Observers counted independent auditory and visual detections of scavengers along along transects. We conducted 8 surveys at each site between May 12, 2021, and July 9, 2021, aiming to survey each site at various times of day. 
+
+## Data Analysis
+We used a closed population (single-season, no migration) N-mixture analysis, which is a hierarchical model with (1) an ecological submodel that links abundance to environmental predictors and (2) an observation submodel that links detection probability to predictors. We created one model for raven abundance and one model for raptor abundance. The raptor abundance model includes species as a random effect. 
+  
+### Environmental predictors
+* Recreation intensity (continuous)   
+* % shrub cover (continuous)  
+* Ground squirrel abundance estimate (continuous) *removed because of high multicolinearity with power line density*   
+* Road density (continuous)  *removed because of high multicolinearity with % developed*  
+* Power line density (continuous)  
+* % developed (continuous)  
+
+### Detection predictors
+* Day of Year  
+* Time (minutes past 12:00 AM)  
+* Wind speed (km per hour)  
+* Temp (Celsius)  
+
+### Analysis notes
+* Combined auditory and visual detections - observers aimed to count each individual once   
+* Removed observations out of the buffer  
+* Combined all Buteo species, including unknown Buteo  
+* Standardized predictor variables with the equation from Gelman 2008 to be consistent with other analyses - did NOT use the unmarked package standardization  
+* Used the default value for k (max observed + 100)  
+* An assumption of N-Mixture models is that all observations are individuals, no groups. Our data breaks this assumption - the dataset with observations in the buffer has 94 observations with >1 (74 x 2 birds, 10 x 3 birds, 8 x 4 birds, 2 x 5 birds). To be conservative, I'm counting these as only 1 individual, since we don't have a way to account for higher detection probability for more individuals (because observations are aggregated by survey day, so we lose some individual info).   
+* Didn't use weather as a detection predictor because there were too many categories for the number of observations and we expected that temperature and wind speed covered the most relevant aspects of the weather categories. 
+
+# Resources
+This analysis follows the CountDataPrep.R and CountAnalysis.R scripts created by Dr. Jen Cruz, which can be accessed here: https://github.com/quantitativeconservationlab/AppPopnEco. 
+## UBMS package
+https://cran.r-project.org/web/packages/ubms/vignettes/random-effects.html.
+https://groups.google.com/g/unmarked/c/dChRYcvox6U?pli=1 
+https://stats.stackexchange.com/questions/31569/questions-about-how-random-effects-are-specified-in-lmer *specifying random effects*
+https://kenkellner.com/blog/ubms-vignette.html 
+
+
+# Load Data
+```{r}
+RavenSurveys <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/Ravens_Clean_29April2024.csv")
+
+RaptorSurveys <-read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/Raptors_Clean_29April2024.csv")
+
+RaptorInBuffer <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/RaptorsInBuffer_Clean_29April2024.csv")
+```
+
+# Raptor sample sizes used in the text
+```{r}
+table(RaptorInBuffer$Species)
+raptor <- filter(RaptorInBuffer, Species != "badger" & Species != "CORA" & Species != "coyote" & Species != "other" & Species != "raptor" & Species != "jackrabbit")
+```
+
+# Look at flock size since we're counting each as one bird to meet the model assumptions of no flocks
+From the methods: Our data included observations of flocks (n = 86 raven flocks, n = 8 raptor flocks, median size = 2, range = 2−5 individuals), which violated an assumption of the binomial N-mixture model of abundance. To be conservative, we counted each flock as one individual. 
+```{r}
+# Flock size 
+table(RaptorInBuffer$Count) # only in buffer - 95 flocks > 1 bird, 2-5 birds each, median = 2
+
+flocks <- RaptorInBuffer %>% filter(Count >= 2)
+flocks <- flocks %>% filter(Species != "badger")
+table(flocks$Species)
+CORAflocks <- flocks %>% filter(Species == "CORA")
+hist(CORAflocks$Count)
+median(CORAflocks$Count)
+nonCORAflocks <- flocks %>% filter(Species != "CORA")
+median(nonCORAflocks$Count)
+hist(nonCORAflocks$Count)
+```
+
+
+# Predictor values for variable summary table and in text
+```{r}
+raven.mean <- mean(RavenSurveys$RavenCount)
+raven.min <- min(RavenSurveys$RavenCount)
+raven.max <- max(RavenSurveys$RavenCount)
+
+raptor.mean <- mean(RaptorSurveys$RaptorCount)
+raptor.min <- min(RaptorSurveys$RaptorCount)
+raptor.max <- max(RaptorSurveys$RaptorCount)
+
+rec.mean <- mean(RavenSurveys$rec.intensity)
+rec.min <- min(RavenSurveys$rec.intensity)
+rec.max <- max(RavenSurveys$rec.intensity)
+rec.sd <- sd(RavenSurveys$rec.intensity)
+
+ppl.mean <- mean(RavenSurveys$powerline)
+ppl.min <- min(RavenSurveys$powerline)
+ppl.max <- max(RavenSurveys$powerline)
+ppl.sd <- sd(RavenSurveys$powerline)
+
+dev.mean <- mean(RavenSurveys$developed)
+dev.min <- min(RavenSurveys$developed)
+dev.max <- max(RavenSurveys$developed)
+dev.sd <- sd(RavenSurveys$developed)
+
+shrub.mean <- mean(RavenSurveys$shrub)
+shrub.min <- min(RavenSurveys$shrub)
+shrub.max <- max(RavenSurveys$shrub)
+shrub.sd <- sd(RavenSurveys$shrub)
+
+rd.mean <- mean(RavenSurveys$roads)
+rd.min <- min(RavenSurveys$roads)
+rd.max <- max(RavenSurveys$roads)
+
+grsq.mean <- mean(RavenSurveys$grsq_est)
+grsq.min <- min(RavenSurveys$grsq_est)
+grsq.max <- max(RavenSurveys$grsq_est)
+
+doy.mean <- mean(RavenSurveys$DayOfYear)
+doy.min <- min(RavenSurveys$DayOfYear)
+doy.max <- max(RavenSurveys$DayOfYear)
+
+time.mean <- mean(RavenSurveys$TimeDiff)
+time.mean/60
+0.47125 * 60
+time.min <- min(RavenSurveys$TimeDiff)
+time.min/60
+0.166667 * 60
+time.max <- max(RavenSurveys$TimeDiff)
+time.max/60
+0.4 * 60
+
+sunrisetime.mean <- mean(RavenSurveys$TimeDiffSunrise)
+sunrisetime.mean/60
+0.336458 * 60
+sunrisetime.min <- min(RavenSurveys$TimeDiffSunrise)
+sunrisetime.min/60
+0.1333333 * 60
+sunrisetime.max <- max(RavenSurveys$TimeDiffSunrise)
+sunrisetime.max/60
+0.23333 * 60
+
+wind.mean <- mean(RavenSurveys$Wind.KMHR)
+wind.min <- min(RavenSurveys$Wind.KMHR)
+wind.max <- max(RavenSurveys$Wind.KMHR)
+
+temp.mean <- mean(RavenSurveys$Temp.Celcius)
+temp.min <- min(RavenSurveys$Temp.Celcius)
+temp.max <- max(RavenSurveys$Temp.Celcius)
+```
+
+# Raven Analysis
+## Raven UMF Dataframe
+### Check predictor structure & multicolinearity
+```{r}
+# Site-level predictors
+prednames_raven1 <- c("rec.intensity", "grsq_est", "roads", "shrub", "developed", "powerline")
+
+# loop over each to create histograms for each predictor:
+for( p in 1:length(prednames_raven1) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( RavenSurveys ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_raven1[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_raven1[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+# correlation among predictors. > 0.8 would be severe multicolinearity 
+raven.cor1 <- cor( RavenSurveys[ , prednames_raven1] )
+raven.cor1
+symnum(raven.cor1)
+
+## Obs-level predictors
+prednames_raven2 <- c("DayOfYear", "TimeDiffSunrise", "Wind.KMHR", "Temp.Celcius")
+
+# loop over each to create histograms for each predictor:
+for( p in 1:length(prednames_raven2) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( RavenSurveys ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_raven2[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_raven2[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+# correlation among predictors. > 0.8 would be severe multicolinearity 
+raven.cor2 <- cor( RavenSurveys[ , prednames_raven2] )
+raven.cor2
+symnum(raven.cor2)
+```
+
+### Standardize predictors
+```{r}
+#### standardize predictor variables ####
+stdize<-function(x) {(x-mean(x))/(2*sd(x))}  # from Gelman 2008
+
+# Site-level predictors
+RavenSurveys$recI_std <- stdize(RavenSurveys$rec.intensity)
+RavenSurveys$road_std <- stdize(RavenSurveys$roads)
+RavenSurveys$shrub_std <- stdize(RavenSurveys$shrub)
+RavenSurveys$grsq_est_std <- stdize(RavenSurveys$grsq_est)
+RavenSurveys$devel_std <- stdize(RavenSurveys$developed)
+RavenSurveys$ppl_std <- stdize(RavenSurveys$powerline)
+
+# Observation-level predictors
+RavenSurveys$date_std <- stdize(RavenSurveys$DayOfYear)
+RavenSurveys$time_std <- stdize(RavenSurveys$TimeDiffSunrise)
+RavenSurveys$wind_std <- stdize(RavenSurveys$Wind.KMHR)
+RavenSurveys$temp_std <- stdize(RavenSurveys$Temp.Celcius)
+```
+
+### Put dataframe into wide format
+```{r}
+# Need to add a survey day variable to make the wide dataframe work 
+survey.day <- c(1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8)
+
+RavenSurveys <- arrange(RavenSurveys, Site.Name, DayOfYear) #reorder dataset by site, then date
+RavenSurveys$survey.day <- survey.day # add survey day label to each site
+
+RavenDF <- RavenSurveys %>% # selecting only the columns being used
+  dplyr::select(Site.Name, recI_std, road_std, shrub_std, grsq_est_std, devel_std, ppl_std, survey.day, date_std, temp_std, wind_std, time_std, RavenCount)
+
+raven.wide <- RavenDF %>%
+  pivot_wider(
+    # site-level:
+    id_cols = c(Site.Name, recI_std, road_std, shrub_std, grsq_est_std, devel_std, ppl_std), 
+    names_from = survey.day, 
+    names_glue = "{.value}.{survey.day}", 
+    # obs-level:
+    values_from = c(date_std, temp_std, wind_std, time_std, RavenCount))
+```
+
+
+### Put in unmarked dataframe
+```{r}
+umf.raven <- unmarkedFramePCount(y = as.matrix(raven.wide [ , c("RavenCount.1",
+                                    "RavenCount.2", "RavenCount.3", "RavenCount.4",
+                                    "RavenCount.5", "RavenCount.6", "RavenCount.7",
+                                    "RavenCount.8")]), 
+          siteCovs = raven.wide[ , c("recI_std","road_std", "shrub_std", "grsq_est_std", "devel_std", "ppl_std")],
+          obsCovs = list(
+            date = raven.wide[ , c("date_std.1", "date_std.2", "date_std.3", "date_std.4", "date_std.5", 
+                                    "date_std.6", "date_std.7", "date_std.8")], 
+            temp = raven.wide[ ,c("temp_std.1", "temp_std.2", "temp_std.3","temp_std.4","temp_std.5", 
+                                  "temp_std.6", "temp_std.7", "temp_std.8")], 
+             wind = raven.wide[ ,c("wind_std.1", "wind_std.2", "wind_std.3", "wind_std.4",
+                                "wind_std.5", "wind_std.6", "wind_std.7", "wind_std.8")],
+             time = raven.wide[ ,c("time_std.1", "time_std.2", "time_std.3", "time_std.4",
+                                  "time_std.5", "time_std.6", "time_std.7", "time_std.8")]
+          ))
+
+summary(umf.raven)
+```
+
+## Raven Model
+```{r}
+
+raven.mod.p1 <- pcount( ~ 1 + date + time + wind # observation submodel
+                        # ecological submodel: 
+                        ~ 1 + recI_std + ppl_std + shrub_std + devel_std, 
+                        K = 117, # Max possible abundance during primary occasion (max obs + 100)
+                        data = umf.raven)
+
+```
+
+## Goodness of Fit
+```{r}
+# Compute observed chi-square, assess significance, and estimate c-hat
+gof.boot.p <- Nmix.gof.test(raven.mod.p1, nsim = 1000, print.table= TRUE)
+gof.boot.p
+
+#Estimate overdispersion metrics
+chat(raven.mod.p1, type = "marginal")
+chat(raven.mod.p1, type = "site-sum")
+chat(raven.mod.p1, type = "observation")
+
+# Plot residuals against fitted values. Site-sum randomized quantile residuals are used for site covariates & marginal residuals are used for observation covariates
+residfit(raven.mod.p1, type = "site-sum") # observation covariates
+residfit(raven.mod.p1, type = "observation") # observation model residuals
+
+
+# Plot QQ plots of randomized residuals against standard normal quantiles. Under good fit, residuals should be close to the identity linne
+residqq(raven.mod.p1, type = "site-sum")
+residqq(raven.mod.p1, type = "observation")
+```
+
+## Model Summary for Table 3
+```{r}
+summary(raven.mod.p1)
+confint(raven.mod.p1, type = "state")
+confint(raven.mod.p1, type = "det")
+```
+
+## Model results in text
+```{r}
+plogis(coef(raven.mod.p1[2]))
+plogis(0.442) # intercept se
+```
+
+
+
+```{r}
+### estimated abundance - intercept
+exp(coef(raven.mod.p1[1]))
+exp(0.390) # intercept SE
+
+
+## range of rec values 
+rec.effect <- data.frame(rec = c(rec.min, rec.max), 
+                         ppl_std = 0, shrub_std = 0, devel_std = 0)
+
+rec.effect$recI_std <- ((rec.effect$rec) - rec.mean)/ (2*rec.sd)
+
+Lpred.rec <- predict(raven.mod.p1, type = "state", newdata = rec.effect) 
+
+70.55403 - 25.15055
+
+## powerline values
+ppl.effect <- data.frame(ppl = c(ppl.min, ppl.max), 
+                         recI_std = 0, shrub_std = 0, devel_std = 0)
+
+ppl.effect$ppl_std <- ((ppl.effect$ppl) - ppl.mean)/ (2*ppl.sd)
+
+Lpred.ppl <- predict(raven.mod.p1, type = "state", newdata = ppl.effect)
+
+44.7671 - 24.22866
+
+## % devel
+devel.effect <- data.frame(devel = c(dev.min, dev.max), 
+                         recI_std = 0, shrub_std = 0, ppl_std = 0)
+
+devel.effect$devel_std <- ((devel.effect$devel) - dev.mean)/ (2*dev.sd)
+
+Lpred.dev <- predict(raven.mod.p1, type = "state", newdata = devel.effect)
+
+44.24475 - 29.08736 
+
+## % shrub
+shrub.effect <- data.frame(shrub = c(shrub.min, shrub.max), 
+                         recI_std = 0, devel_std = 0, ppl_std = 0)
+
+shrub.effect$shrub_std <- ((shrub.effect$shrub) - shrub.mean)/ (2*shrub.sd)
+
+Lpred.shrub <- predict(raven.mod.p1, type = "state", newdata = shrub.effect)
+
+27.04417  - 34.73333 
+```
+# Raptor Analysis
+### Check predictor structure & multicolinearity
+```{r}
+# Site-level predictors
+prednames_1 <- c("rec.intensity", "grsq_est", "roads", "shrub", "developed", "powerline")
+
+# loop over each to create histograms for each predictor:
+for( p in 1:length(prednames_1) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( RaptorSurveys ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_1[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_1[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+# correlation among predictors. > 0.8 would be severe multicolinearity 
+cor1 <- cor( RaptorSurveys[ , prednames_1] )
+cor1
+symnum(cor1)
+
+## Obs-level predictors
+prednames_2 <- c("DayOfYear", "TimeDiffSunrise", "Wind.KMHR", "Temp.Celcius")
+
+# loop over each to create histograms for each predictor:
+for( p in 1:length(prednames_2) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( RaptorSurveys ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_2[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_2[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+# correlation among predictors. > 0.8 would be severe multicolinearity 
+cor2 <- cor( RaptorSurveys[ , prednames_2] )
+cor2
+symnum(cor2)
+```
+### standardize predictor variables ####
+```{r}
+stdize<-function(x) {(x-mean(x))/(2*sd(x))}  # from Gelman 2008
+
+# Site-level predictors
+RaptorSurveys$recI_std <- stdize(RaptorSurveys$rec.intensity)
+RaptorSurveys$road_std <- stdize(RaptorSurveys$roads)
+RaptorSurveys$shrub_std <- stdize(RaptorSurveys$shrub)
+RaptorSurveys$grsq_est_std <- stdize(RaptorSurveys$grsq_est)
+RaptorSurveys$devel_std <- stdize(RaptorSurveys$developed)
+RaptorSurveys$ppl_std <- stdize(RaptorSurveys$powerline)
+
+# Observation-level predictors
+RaptorSurveys$date_std <- stdize(RaptorSurveys$DayOfYear)
+RaptorSurveys$time_std <- stdize(RaptorSurveys$TimeDiffSunrise)
+RaptorSurveys$wind_std <- stdize(RaptorSurveys$Wind.KMHR)
+RaptorSurveys$temp_std <- stdize(RaptorSurveys$Temp.Celcius)
+```
+
+### Put dataframe into wide format
+```{r}
+# Need to add a survey day variable to make the wide dataframe work 
+survey.day <- c(1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8)
+
+RaptorSurveys <- arrange(RaptorSurveys, Site.Name, DayOfYear) #reorder dataset by site, then date
+RaptorSurveys$survey.day <- survey.day # add survey day label to each site
+
+RaptorDF <- RaptorSurveys %>% # selecting only the columns being used
+  dplyr::select(Site.Name, recI_std, road_std, shrub_std, grsq_est_std, devel_std, ppl_std, survey.day, date_std, temp_std, wind_std, time_std, RaptorCount)
+
+raptor.wide <- RaptorDF %>%
+  pivot_wider(
+    # site-level:
+    id_cols = c(Site.Name, recI_std, road_std, shrub_std, grsq_est_std, devel_std, ppl_std), 
+    names_from = survey.day, 
+    names_glue = "{.value}.{survey.day}", 
+    # obs-level:
+    values_from = c(date_std, temp_std, wind_std, time_std, RaptorCount))
+```
+
+
+### Put in unmarked dataframe
+```{r}
+umf.raptor <- unmarkedFramePCount(y = as.matrix(raptor.wide [ , c("RaptorCount.1",
+                                    "RaptorCount.2", "RaptorCount.3", "RaptorCount.4",
+                                    "RaptorCount.5", "RaptorCount.6", "RaptorCount.7",
+                                    "RaptorCount.8")]), 
+          siteCovs = raven.wide[ , c("recI_std","road_std", 
+                                     "shrub_std", "grsq_est_std", "devel_std", "ppl_std")],
+          obsCovs = list(
+            date = raven.wide[ , c("date_std.1", 
+                                   "date_std.2", "date_std.3", "date_std.4", "date_std.5", 
+                                    "date_std.6", "date_std.7", "date_std.8")], 
+            temp = raven.wide[ ,c("temp_std.1", "temp_std.2", "temp_std.3","temp_std.4","temp_std.5", 
+                                  "temp_std.6", "temp_std.7", "temp_std.8")], 
+             wind = raven.wide[ ,c("wind_std.1", "wind_std.2", "wind_std.3", "wind_std.4",
+                                "wind_std.5", "wind_std.6", "wind_std.7", "wind_std.8")],
+             time = raven.wide[ ,c("time_std.1", "time_std.2", "time_std.3", "time_std.4",
+                                  "time_std.5", "time_std.6", "time_std.7", "time_std.8")]))
+
+summary(umf.raptor)
+```
+
+## Raptor Model
+```{r}
+raptor.mod.p1 <- pcount( ~ 1 + date + time + wind # observation submodel
+                        # ecological submodel: 
+                        ~ 1 + recI_std + ppl_std + shrub_std + devel_std, 
+                        K = 117, # Max possible abundance during primary occasion (max obs + 100)
+                        data = umf.raptor)
+
+summary(raptor.mod.p1)
+```
+## GOF 
+```{r}
+# Plot residuals against fitted values. Site-sum randomized quantile residuals are used for site covariates & marginal residuals are used for observation covariates
+residfit(raptor.mod.p1, type = "site-sum") # observation covariates
+residfit(raptor.mod.p1, type = "observation") # observation model residuals
+
+# Plot QQ plots of randomized residuals against standard normal quantiles. Under good fit, residuals should be close to the identity linne
+residqq(raptor.mod.p1, type = "site-sum")
+residqq(raptor.mod.p1, type = "observation")
+```
+
+## Model Summary for Table 3
+```{r}
+summary(raptor.mod.p1)
+confint(raptor.mod.p1, type = "state")
+confint(raptor.mod.p1, type = "det")
+```
+## in text
+```{r}
+### estimated abundance - intercept
+exp(coef(raptor.mod.p1[1]))
+exp(0.8212580) # intercept SE
+
+## range of rec values 
+rec.effect <- data.frame(rec = c(rec.min, rec.max), 
+                         ppl_std = 0, shrub_std = 0, devel_std = 0)
+
+rec.effect$recI_std <- ((rec.effect$rec) - rec.mean)/ (2*rec.sd)
+
+Lpred.rec <- predict(raptor.mod.p1, type = "state", newdata = rec.effect) 
+
+19.79425 - 30.58020
+
+```
+
+# Figures 
+## Predictor values
+```{r}
+# Range of values for predictions
+rec <- seq(rec.min, rec.max,,600)
+ppl <- seq(ppl.min, ppl.max,, 600)
+shrub  <- seq(shrub.min, shrub.max,,600)
+devel <- seq(dev.min, dev.max,,600)
+
+# standardize recreation values based on the mean & sd from the data
+rec.st <- ((rec) - rec.mean)/ (2*rec.sd)
+ppl.st <- ((ppl) - ppl.mean)/(2*ppl.sd)
+shrub.st <- ((shrub) - shrub.mean)/(2*shrub.sd)
+dev.st <- ((devel) - dev.mean)/(2*dev.sd)
+
+# standardize min, mean, max for rec
+rec.mean.st <- ((rec.mean) - rec.mean)/(2*rec.sd)
+rec.min.st <- ((rec.min) - rec.mean)/(2*rec.sd)
+rec.max.st <- ((rec.max) - rec.mean)/(2*rec.sd)
+```
+
+## Raven plots
+```{r}
+#### RAVENS ####
+# Predictions 
+# rec
+NewL.rec <- data.frame(recI_std = rec.st, ppl_std = 0, shrub_std = 0, devel_std = 0)
+Lpred.rec <- predict(raven.mod.p1, type = "state", newdata = NewL.rec) # creates df with predictions for lambda
+Lpred.rec$rec <- rec # add a column with the real # values used to get these predictions
+Lpred.rec$x <- c(1)
+
+
+FigRaven <- ggplot(data = Lpred.rec, mapping = aes(x=rec, y=Predicted,
+                                             color = as.factor(x), 
+                                             fill = as.factor(x)))+
+  geom_line()+
+  geom_ribbon(aes(ymin = lower, ymax=upper), alpha = 0.1)+
+  scale_fill_manual(values="grey40")+
+  scale_color_manual(values="grey40") + 
+  theme_classic() + 
+  theme(legend.position = "none")+
+  labs(title = "", x = "Recreation intensity", y = "Predicted ravens/"~km^2)
+  #theme(text=element_text(family="Times New Roman", size=14))
+
+ggsave("C:/Users/Madeline/Desktop/NEWraven.jpg", width = 4, height = 2.5, units = "in", 
+       dpi = 400)
+```
+
+
+# Raptor Plots
+```{r}
+# Predictions 
+# rec
+NewL.rec <- data.frame(recI_std = rec.st, ppl_std = 0, shrub_std = 0, devel_std = 0)
+Lpred.rec <- predict(raptor.mod.p1, type = "state", newdata = NewL.rec) # creates df with predictions for lambda
+Lpred.rec$rec <- rec # add a column with the real # values used to get these predictions
+Lpred.rec$x <- c(1)
+
+# plot
+
+FigRaptor <- ggplot(data = Lpred.rec, mapping = aes(x=rec, y=Predicted,
+                                             color = as.factor(x), 
+                                             fill = as.factor(x)))+
+  geom_line()+
+  #ylim(0,135)+
+  geom_ribbon(aes(ymin = lower, ymax=upper), alpha = 0.1)+
+  scale_fill_manual(values="grey40")+
+  scale_color_manual(values="grey40") + 
+  theme_classic() + 
+  theme(legend.position = "none")+
+  labs(title = "", x = "Recreation intensity", y = "Predicted raptors/"~km^2)
+ # theme(text=element_text(family="Times New Roman", size=14))
+
+ggsave("C:/Users/Madeline/Desktop/NEWraptor.jpg", width = 4, height = 2.5, units = "in", 
+       dpi = 400)
+```
+
+
+# Appendix table
+```{r}
+AppendixSumm <- AppendixSumm %>% mutate(
+  site = case_when(
+    Site.Name == "PV1" ~ "H1", 
+    Site.Name == "CC1" ~ "L1", 
+    Site.Name == "PV2" ~ "H2",
+    Site.Name == "CC2" ~ "L2",
+    Site.Name == "PV3" ~ "H3",
+    Site.Name == "BB2" ~ "L3",
+    Site.Name == "SF1" ~ "H4",
+    Site.Name == "BB3" ~ "L4",
+    Site.Name == "SF2" ~ "H5",
+    Site.Name == "BB1" ~ "L5"
+  )
+)
+
+AppendixSumm$site <-  factor(AppendixSumm$site, 
+                            levels = c("H1", "L1", "H2", "L2", 
+                                       "H3", "L3", "H4", "L4", "H5", "L5"))
+
+AppendixSumm %>%
+  group_by(site) %>%
+  summarize(
+    buow = sum(BUOWcount),
+    buteo = sum(ButeoCount), 
+    feha = sum(FEHAcount), 
+    rtha = sum(RTHAcount), 
+    swha = sum(SWHAcount), 
+    goea = sum(GOEAcount), 
+    noha = sum(NOHAcount), 
+    prfa = sum(PRFAcount), 
+    tuvu = sum(TUVUcount), 
+    seow = sum(SEOWcount))
+
+AppendixSumm %>%
+  summarize(
+    buow = sum(BUOWcount),
+    buteo = sum(ButeoCount), 
+    feha = sum(FEHAcount), 
+    rtha = sum(RTHAcount), 
+    swha = sum(SWHAcount), 
+    goea = sum(GOEAcount), 
+    noha = sum(NOHAcount), 
+    prfa = sum(PRFAcount), 
+    tuvu = sum(TUVUcount), 
+    seow = sum(SEOWcount))
+
+# RAVENS!
+RavenAPPENDIX %>%
+  summarize(
+    cora = sum(RavenCount))
+
+
+RavenAPPENDIX <- RavenAPPENDIX %>% mutate(
+  site = case_when(
+    Site.Name == "PV1" ~ "H1", 
+    Site.Name == "CC1" ~ "L1", 
+    Site.Name == "PV2" ~ "H2",
+    Site.Name == "CC2" ~ "L2",
+    Site.Name == "PV3" ~ "H3",
+    Site.Name == "BB2" ~ "L3",
+    Site.Name == "SF1" ~ "H4",
+    Site.Name == "BB3" ~ "L4",
+    Site.Name == "SF2" ~ "H5",
+    Site.Name == "BB1" ~ "L5"
+  )
+)
+RavenAPPENDIX$site <-  factor(RavenAPPENDIX$site, 
+                            levels = c("H1", "L1", "H2", "L2", 
+                                       "H3", "L3", "H4", "L4", "H5", "L5"))
+
+RavenAPPENDIX %>%
+  group_by(site) %>%
+  summarize(cora = sum(RavenCount))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
