@@ -210,6 +210,6 @@ str(grsqcount$shrub.pt)
 
 # Save clean dataset
 ```{r}
-write.csv(grsqcount, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/GroundSquirrel_Clean_29April2024")
+write.csv(grsqcount, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/GroundSquirrel_Clean_29April2024.csv")
 ```
 
