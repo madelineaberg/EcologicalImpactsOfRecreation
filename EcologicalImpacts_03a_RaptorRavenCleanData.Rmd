@@ -5,7 +5,7 @@ date: '2022-06-13'
 output: pdf_document
 ---
 # Clean Raptor & Raven Data
-# LAST UPDATED: 29 Apr 2024
+# 29 Apr 2024
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -14,11 +14,6 @@ library(tidyverse)
 library(ggplot2)
 library(jtools)
 library(lubridate)
-library( unmarked ) # runs N-mixture models
-library( MuMIn ) # calculates pseudo-R^2
-library( AICcmodavg) # gof tests (Duarte et al. 2018)
-library( nmixgof ) # for evaluating N-mixture models gof tests (Knape et al. 2018)
-library(ubms)
 ```
 
 # Overview
@@ -290,44 +285,9 @@ SurveyInfo$Temp.Celcius <- fahrenheit.to.celsius(SurveyInfo$Temp)
 SurveyInfo <- dplyr::select(SurveyInfo, c(GlobalID, Observer, Site.Name, grsq_est, roads, shrub, developed, rec.intensity, powerline, DayOfYear, TimeDiff, TimeDiffSunrise, Wind.KMHR, Temp.Celcius))
 ```
 
-## Look at flock size since we're counting each as one bird to meet the model assumptions of no flocks
-From the methods: Our data included observations of flocks (n = 86 raven flocks, n = 8 raptor flocks, median size = 2, range = 2−5 individuals), which violated an assumption of the binomial N-mixture model of abundance. To be conservative, we counted each flock as one individual. 
-```{r}
-# Flock size 
-table(RaptorInBuffer$Count) # only in buffer - 95 flocks > 1 bird, 2-5 birds each, median = 2
 
-flocks <- RaptorInBuffer %>% filter(Count >= 2)
-flocks <- flocks %>% filter(Species != "badger")
-table(flocks$Species)
-CORAflocks <- flocks %>% filter(Species == "CORA")
-hist(CORAflocks$Count)
-median(CORAflocks$Count)
-nonCORAflocks <- flocks %>% filter(Species != "CORA")
-median(nonCORAflocks$Count)
-hist(nonCORAflocks$Count)
-```
 
-# Raptor sample sizes used in the text
-*Methods*
-Raven observations (n = 185) were greater than all raptor observations (n = 172).  
-We excluded observations of short-eared owls (Asio flammeus), which are not known to scavenge or prey on ground squirrels or ground-nesting bird nests (n = 3). We also removed observations classified as unknown raptors (n = 6).   
-*Results*
-Within the 250m buffer around each 1-km2 grid, we observed:
-ravens (n = 185),  
-burrowing owls (Athene cunicularia, n = 17),  
-ferruginous hawks (n = 7),  
-golden eagles (Aquila chrysaetos, n = 8),  
-northern harriers (Circus hudsonius, n = 61),  
-prairie falcons (Falco mexicanus, n = 21),  
-red-tailed hawks (n = 27),  
-short-eared owls (n = 3),  
-Swainson’s hawks (n = 17),  
-and turkey vultures (Cathartes aura, n = 5).  
-We also briefly observed several birds that could not be identified beyond being raptors (n = 6) or members of the Buteo genus (n = 6).
-```{r}
-table(RaptorInBuffer$Species)
-raptor <- filter(RaptorInBuffer, Species != "badger" & Species != "CORA" & Species != "coyote" & Species != "other" & Species != "raptor" & Species != "jackrabbit")
-```
+
 
 
 ## Dataframe for analysis: RavenSurveys - 1 row per survey day with summary of # ravens *** Using observations in the buffer only ***
@@ -400,5 +360,10 @@ str(RaptorSurveys$RaptorCount)
 ## Save Clean Raptor Surveys
 ```{r}
 write.csv(RaptorSurveys, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/Raptors_Clean_29April2024.csv")
+```
+
+# Save RaptorInBuffer
+```{r}
+write.csv(RaptorInBuffer, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/RaptorsInBuffer_Clean_29April2024.csv")
 ```
 
