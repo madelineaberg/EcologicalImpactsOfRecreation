@@ -1,0 +1,171 @@
+---
+title: "Manuscript_HolaLbcuDensity"
+author: "Madeline Aberg"
+date: '2022-06-30'
+output: pdf_document
+---
+# Clean Data for Breeding Bird Density Analysis
+# Last updated: 29 April 2024
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Distance) # for Conventional Distance Sampling
+library(dplyr)
+library(lubridate)
+library(weathermetrics)
+library(ggplot2)
+```
+
+# Overview
+## Data Collection
+We conducted point counts for horned larks and long-billed curlews at each paired site from April 2-14, 2021. Within the 1 km2 paired sites, we created grids of 16 survey points and followed the Integrated Monitoring in Bird Conservation Regions field protocol (McLaren et al. 2019). At each point, we recorded the date, time, percent cloud cover, wind speed according to the Beaufort scale, temperature, and habitat within a 50 m radius. We then recorded all species of birds present at the point during a 6-minute survey. For each independently detected bird, we recorded the point number, the minute during the count in which it was detected, radial distance to the bird, detection method, and sex of the bird. We did not include juveniles in the count.
+
+## Analysis 
+To estimate density, we used the ‘Distance’ package in R to analyze our point count data with distance sampling (Miller et al. 2017). We created a detection function from our counts, which models the probability of detecting an object at a distance, then used the best detection function to estimate density. We tested half-normal and hazard-rate key detection functions and selected hazard-rate based on a lower AICc value and goodness-of-fit test results. We added covariates that may have impacted detectability:  
+- Date   
+- Time  
+- Temperature  
+
+We then modeled the differences in site-level density based on the recreation intensity, % herbaceous cover, and % shrub cover of the site using a Poisson glm.
+
+### Analysis Notes
+We tried to use hierarchical distance sampling, which combines these two models and propogates the error in the density estimate. However, this produced unreasonably large density estimates (800 hola/kmsq). The trends and effect sizes seen are very similar with the two modeling techniques. 
+
+# Load & Clean the Data
+```{r}
+### Recreation Intensity Data ###
+# Recreation intensity for each paired site, calculated in EcologicalImpacts_01_RecreationIntensityAnalysis.Rmd  
+#This file has the recreation intensity for different buffer sizes (500m - 5000m). 
+#For this analysis, we used the recreation intensity from a 2000m buffer around the sites from March to July 2021. 
+rec <- read.csv(here::here("datatemp/original/PairedRecIntensity.csv"))
+
+ptct2021 <- read.csv(here::here("datatemp/original/HOLApointcount2021.csv")) # observation-level data
+
+# Rename columns 
+ptct2021 <- rename(ptct2021, ID = PC..)
+ptct2021 <- rename(ptct2021, distance = Distance)
+ptct2021 <- rename(ptct2021, perShrub = X..Shrub)
+ptct2021 <- rename(ptct2021, VisitNum = Visit..)
+
+# Add a detection variable
+ptct2021$Detection <- 1 # Each row in the dataframe = 1 observation (cluster size gives the # of individuals)
+
+# Remove 88 birds (n = 8) - these were observed between points
+ptct2021 <- filter(ptct2021, minute != 88)
+
+# Make sure variable structure matches
+ptct2021$distance <- as.numeric(ptct2021$distance)
+ptct2021$cluster.size <- as.numeric(ptct2021$cluster.size)
+ptct2021$Date <- as.Date(ptct2021$Date, format = "%m/%d/%Y")
+ptct2021$DOY <- yday(ptct2021$Date) # put date into day of year
+ptct2021$Temp.Celcius <- fahrenheit.to.celsius(ptct2021$Temp) # change to celcius
+ptct2021$Wind <- as.factor(ptct2021$Wind) # factor because it was collected on the Beaufort scale
+ptct2021 <- mutate(ptct2021, time1 = case_when(
+  Time.Start <= 999 ~ paste0("0", Time.Start), 
+  Time.Start >= 1000 ~ paste0(Time.Start))) 
+
+ptct2021$TimeDiff <- difftime(as.POSIXct(ptct2021$time1, format = "%H%M"), as.POSIXct("0:00", format = "%H:%M"), units = "min")
+
+# Sunrise from: https://www.timeanddate.com/sun/usa/boise?month=4&year=2021 
+ptct2021 <- mutate(ptct2021, 
+                   sunrise = case_when(
+                     Date == "2021-04-02" ~ "07:24", 
+                     Date == "2021-04-03" ~ "07:22", 
+                     Date == "2021-04-07" ~ "07:15", 
+                     Date == "2021-04-09" ~ "07:11", 
+                     Date == "2021-04-13" ~ "07:04", 
+                     Date == "2021-04-14" ~ "07:03"))
+
+ptct2021$TimeDiffSunrise <- difftime(as.POSIXct(ptct2021$time1, format = "%H%M"), as.POSIXct(ptct2021$sunrise, format = "%H:%M"), units = "min")
+
+ptct2021$TimeDiffSunrise <- as.numeric(ptct2021$TimeDiffSunrise)
+
+# Add region labels (BB1, BB2, etc)
+ptct2021 <- ptct2021 %>%
+  mutate(Region.Label = case_when(
+    startsWith(ID, "BB1") ~ "BB1",
+    startsWith(ID, "BB2") ~ "BB2",
+    startsWith(ID, "BB3") ~ "BB3",
+    startsWith(ID, "CC1") ~ "CC1", 
+    startsWith(ID, "CC2") ~ "CC2",
+    startsWith(ID, "PV1") ~ "PV1",
+    startsWith(ID, "PV2") ~ "PV2",
+    startsWith(ID, "PV3") ~ "PV3",
+    startsWith(ID, "SF1") ~ "SF1",
+    startsWith(ID, "SF2") ~ "SF2"))
+
+# Add recreation intensity (March - July 2021 within a 2000m buffer) 
+rec.sub <- dplyr::select(rec, c(X, MarJul2021_Buffer2km))
+rec.sub <- rename(rec.sub, c(Region.Label = X),
+                  Rec = MarJul2021_Buffer2km)  
+ptct2021 <- left_join(ptct2021, rec.sub)
+
+#### Vegetation data ####
+PCveg2021 <- read.csv(here::here("datatemp/original/HOLApointcount2021_veg.csv"))
+
+# rename columns in the dataset
+PCveg2021  <- rename(PCveg2021 , ID = PC..)
+PCveg2021  <- rename(PCveg2021 , perOverstory = X..Overstory)
+PCveg2021  <- rename(PCveg2021 , perShrub = X..Shrub)
+PCveg2021  <- rename(PCveg2021 , perShrub1 = X.shrub1)
+PCveg2021  <- rename(PCveg2021 , perShrub2 = X.shrub2)
+PCveg2021  <- rename(PCveg2021 , perShrub3 = X.shrub3)
+PCveg2021  <- rename(PCveg2021 , dead.down = ded.down)
+
+# Add region labels (BB1, BB2, etc)
+PCveg2021 <- PCveg2021 %>%
+  mutate(Site = case_when(
+    startsWith(ID, "BB1") ~ "BB1",
+    startsWith(ID, "BB2") ~ "BB2",
+    startsWith(ID, "BB3") ~ "BB3",
+    startsWith(ID, "CC1") ~ "CC1", 
+    startsWith(ID, "CC2") ~ "CC2",
+    startsWith(ID, "PV1") ~ "PV1",
+    startsWith(ID, "PV2") ~ "PV2",
+    startsWith(ID, "PV3") ~ "PV3",
+    startsWith(ID, "SF1") ~ "SF1",
+    startsWith(ID, "SF2") ~ "SF2"))
+
+# add % herbaceous to the ptct2021 dataframe
+perHerb <- PCveg2021 %>% dplyr::select(., c(ID, herbaceous))
+ptct2021 <- left_join(ptct2021, perHerb, by = "ID")
+ptct2021$herbaceous
+
+######## HOLA dataframe #############
+hola_ptcount2021 <- ptct2021 %>%filter(., Species == "HOLA")
+hola_ptcount2021$Area <-1000000 # 1 km squared for both areas -> 1,000,000 sq m (to match distance)
+hola_ptcount2021$Effort <- 1 # sampled each point once in 2021 
+hola_ptcount2021 <- rename(hola_ptcount2021, Sample.Label = ID) # unique point names ("PV10")
+hola_ptcount2021 <- rename(hola_ptcount2021, size = cluster.size)
+
+#### LBCU dataframe ####
+lbcu_ptcount2021 <- ptct2021 %>%filter(., Species == "LBCU")
+lbcu_ptcount2021$Area <-1000000 # 1 km squared for both areas -> 1,000,000 sq m (to match distance)
+lbcu_ptcount2021$Effort <- 1 # sampled each point once in 2021 
+lbcu_ptcount2021 <- rename(lbcu_ptcount2021, Sample.Label = ID) # unique point names ("PV10")
+lbcu_ptcount2021 <- rename(lbcu_ptcount2021, size = cluster.size)
+
+## Standardize predictors ##
+stdize<-function(x) {(x-mean(x))/(2*sd(x))}  # function to put variables on the same scale - based on Andrew Gelman paper (from 'practice_with_multiple_regression.Rmd' in EEB622)
+
+# detection
+hola_ptcount2021$date.st <- stdize(hola_ptcount2021$DOY)
+hola_ptcount2021$temp.st <- stdize(hola_ptcount2021$Temp.Celcius)
+hola_ptcount2021$time.st <- stdize(hola_ptcount2021$TimeDiffSunrise)
+
+hola_ptcount2021$date.st2 <- stdize(hola_ptcount2021$Date)
+hola_ptcount2021$temp.st2 <- stdize(hola_ptcount2021$Temp)
+hola_ptcount2021$time.st2 <- stdize(hola_ptcount2021$Time.Start)
+
+lbcu_ptcount2021$date.st <- stdize(lbcu_ptcount2021$DOY)
+lbcu_ptcount2021$temp.st <- stdize(lbcu_ptcount2021$Temp.Celcius)
+lbcu_ptcount2021$time.st <- stdize(lbcu_ptcount2021$TimeDiffSunrise)
+```
+# Save Files
+```{r}
+write.csv(hola_ptcount2021, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/HOLA_PointCount_Clean_29April2024.csv")
+
+write.csv(lbcu_ptcount2021, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/LBCU_PointCount_Clean_29April2024.csv")
+```
+
+
