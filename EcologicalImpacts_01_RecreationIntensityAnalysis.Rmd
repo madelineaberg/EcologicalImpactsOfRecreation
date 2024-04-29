@@ -1,0 +1,1090 @@
+---
+title: "DrivingExtractions"
+author: "Madeline Aberg"
+date: "10/21/2021"
+output: pdf_document
+---
+
+Last updated: July 25, 2022
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Resources
+https://isdrfall21.classes.spaseslab.com/content/13-content/ 
+https://isdrfall21.classes.spaseslab.com/slides/13-slides.html#12
+https://mgimond.github.io/Spatial/chp11_0.html
+https://oliviergimenez.github.io/intro_spatialR/#74
+https://www.maths.usyd.edu.au/u/UG/SM/STAT3022/r/current/Misc/data-visualization-2.1.pdf
+https://egallic.fr/R/sKDE/smooth-maps/kde.html
+https://andrewpwheeler.com/tag/kernel-density/
+https://www.jratcliffe.net/copy-of-aoristic-analysis
+
+
+# Purpose
+This RMarkdown covers the entire process needed to extract recreation intensity values for paired sites or nests. 
+
+## Driving Data
+We used 10 driving routes spread across the NCA, each 16 km in length, that passed through a variety of land cover types and utilized publicly accessible major and minor roads. From April 2019 to July 2021, we drove the routes each Saturday during the recreational shooting season (March - July) and on one randomly selected Saturday per month throughout the rest of the year. During the routes, we recorded the location, number of people, demographics, and number of vehicles for each observation of human use. We classified the type of use as motorized recreation (off-highway vehicles, driving off-road), target shooting (shooting at targets or other inanimate objects, stationary), hunting (moving through vegetation and shooting, no targets), non-motorized recreation (hiking, birdwatching, biking), and other (camping, photography, etc.).  
+  
+*Note: I'm using all types of recreation for recreation intensity (not only shooting),. I also included parked cars assumed to be recreational users (e.g., had an ohv trailer), but we could easily sort out observations where the number of people = 0*
+
+## Paired Sites
+Within the NCA, we selected 10 paired sites in locations with relatively high (n = 5) and low (n = 5) amounts of recreational use. Each site was 1 km2 and was paired with a site with similar vegetative composition. We also designated 2 larger areas for nest searching and monitoring. We compared land cover, elevation, and road density between the paired sites to ensure that one group was not biased by another variable.
+
+Paired sites are used to extract recreation values for ground squirrel abundance, raptor and raven abundance, mammalian scavenger density, and ground-nesting bird (HOLA/LBCU) density. 
+
+## Horned Lark & Long-billed Curlew Nests
+Within the designated nest searching areas, we searched for horned lark nests (March 27 to July 16, 2020, and March 15 to July 18, 2021) and long-billed curlew nests (May 2018 to June 2018, April to June 2019, 2020, 2021). We found nests using behavioral cues, including courtship, nest building, feeding behaviors, and incidentally by flushing birds off nests while walking systematically through promising habitat. During the initial visit, we recorded the location of the nest, measured the developmental stage of the incubating eggs or chicks, and calculated a predicted hatch and fledge date. After the initial visit, we checked nests every 2 to 3 days from a distance to minimize disturbance. As the predicted hatching or fledging date approached, we checked nests daily to better determine nest fate. Within 7 days of the fledge (horned lark) or hatch (curlew) date, we conducted a habitat survey of the nest site. At each nest site, we surveyed the nest and collected data on habitat variables of interest.  
+  
+Nest locations were used to extract recreation values for nest success analyses for the weeks the nest was active. 
+
+# Workflow
+1) Load packages & functions.  
+2) Load spatial & tabular data.  
+3) Set CRS for spatial data - Lat/Long WGS 84 & NAD83 UTM Zone 11.  
+4) Join driving points & tabular data, filter by recreation type.  
+5) For loop - filter by time period, adjust point location, make (& save) a kernel density raster, extract recreation intensity for a given area (paired site, nests), and save extraction values in a dataframe.  
+  
+*Note: Steps 1-4 are the same no matter what sites you're extracting for. The for loop in Step 5 will need to be adjusted depending on the area you're extracting for (paired site or nest), buffer size, and date.*
+
+# Load packages & functions
+## Packages
+This code block loads all of the necessary packages for cleaning & plotting the data. 
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(viridis)
+library(sf)
+```
+
+## Functions
+This code block loads the functions that will be used in Step 5 (*described below*). 
+```{r}
+source("Functions.R", local = knitr::knit_global())
+```
+
+*PointAdjust(df): adjusts points based on the recorded distance (m) and bearing* 
+-df needs to be sf object, CRS = LatLong, WGS84
+
+*KD_extractsave(W, P, d, E, b): creates and saves a kernel density raster using the adjusted points, extracts the raster values*
+- W = window or boundary for the extraction (sf object, NAD83/UTM zone 11N)
+- P = driving observation points (Spatial Points, Lat/Long WGS84) * should be adjusted points from PointAdjust()
+- d = distance in meters for the sigma of the kernel density (have been using 1000)
+- E = points to use in the raster extraction (paired sites, nests) - sf object, NAD83 UTM zone 11
+- b = buffer size for raster extraction in meters
+
+# Load spatial & tabular data 
+## Spatial Data
+```{r}
+# Horned Lark nests for 2020 & 2021
+HolaNests_ll <- read_sf(here::here("datatemp/original/HOLA/HOLA/Nests/Combined_Nests.shp")) # sf, CRS: Lat/Long WGS 84
+HolaNests_ll <- HolaNests_ll[-121,] # one duplicate nest (PV-8)
+
+
+# Horned Lark Nest Search Area for 2021
+HolaNSA_ll <- read_sf(here::here("datatemp/original/HOLA/HOLA/NestSearchArea/2021_NestSearchAreas/2021_NestSearchAreas.shp")) # sf, CRS: Lat/Long WGS 84
+
+# LBCU nests for 2019 - 2021
+LbcuNests <- read.csv(here::here("datatemp/original/LBCUNests.csv"))
+LbcuNests_utm <- st_as_sf(LbcuNests, coords = c("UTMx_nest", "UTMy_nest"), crs = 26911)
+LbcuNests_ll <- st_as_sf(LbcuNests, coords = c("UTMx_nest", "UTMy_nest"), crs = 4326)
+
+# 10 x 1km^2 plots at the NCA used in 2021
+PairedSites_ll <- read_sf(here::here("datatemp/original/HOLA/HOLA/2021_PairedSites/PairedSites2021/PairedSites2021.shp")) # sf, CRS: Lat/Long WGS 84
+PairedSites <- PairedSites_ll$SiteID # Vector of Paired Site labels in order of sf
+
+# driving routes used to survey for recreational use
+routes_utm <- read_sf(here::here("datatemp/original/2019drivingroutes/2019DrivingRoutes.shp")) #sf, CRS: NAD83 UTM zone 11N
+
+# NCA boundary
+NCA_utm <- read_sf(here::here("datatemp/original/NCA_boundary/NCA_boundary.shp")) #sf, CRS: NAD83 UTM zone 11N
+
+# NCA boundary PLUS - includes PV1 area/nests
+NCAplus_utm <- read_sf("datatemp/original/NCA_boundary_plus/NCA_boundary_plus.shp") #sf, CRS: NAD83 UTM zone 11N
+
+# Driving observations 
+driving_pts_ll <- read_sf(here::here("datatemp/original/AllDrivingPts/AllDrivingPts_Final.shp")) # sf, CRS: Lat/Long WGS 84
+```
+
+## Tabular data
+Run the R Script that loads & cleans the tabular, observation-level data. 
+full code listed below
+```{r}
+source("CleanDriveTabData.R", local = knitr::knit_global())
+```
+```{r}
+# Bringing in tabular data only & cleaning it to combine with non-projected points -------------
+# November 1, 2021
+
+# Packages needed ---------------------------------------------------------
+library(sf)
+library(tidyverse)
+library(raster)
+library(here)
+library(ggplot2)
+library(viridis)
+
+#############################################################################################
+################################# OBS TAB ###################################################
+#############################################################################################
+
+# Bring in tabular data ---------------------------------------------------------
+tab_data <- read.csv(here::here("datatemp/original/driving.obs.csv"))
+
+# remove test obs
+tab_data <- filter(tab_data, route != "test") # remove test obs
+
+# remove obs from the week with missing points (2019-06-15) 
+# has no GPS points, so don't want to include in weeks but depending on what doing might not want to remove this
+tab_data <- filter(tab_data, date != "2019-06-15") 
+
+# Check dataset & variables ------------------------------------------------
+table(tab_data$NG.use.code)
+
+# Put the date variable into the date format
+tab_data$date <- as.Date(tab_data$date, "%d/%m/%Y") # want R to read this as a date
+
+# Put time into time format 
+tab_data$time1
+tab_data <- mutate(tab_data, time1 = case_when(
+  time <= 999 ~ paste0("0", time), 
+  time >= 1000 ~ paste0(time))) 
+tab_data$TimeDiff <- difftime(as.POSIXct(tab_data$time1, format = "%H%M"), 
+                              as.POSIXct("0:00", format = "%H:%M"), units = "min")
+
+# Route length - exact, calculated in QGIS
+tab_data <- tab_data %>%
+  mutate(rt_length = case_when(
+    route == "BB1" ~ 19.99, 
+    route == "BB2" ~ 13.56, 
+    route == "CC" ~ 16.00,
+    route == "GV" ~ 17.34,
+    route == "PV1" ~ 12.91,
+    route == "PV2" ~ 13.60,
+    route == "PV3" ~ 14.20,
+    route == "SC" ~ 16.21,
+    route == "SF1" ~ 11.12,
+    route == "SF2" ~ 18.69))
+
+# add obs variable 
+tab_data$obs <- "MA"
+
+# trying to add a sequential week variable for each week through the study
+tab_data <- tab_data %>% group_by(date) %>% dplyr::mutate(week = cur_group_id())
+table(tab_data$week, tab_data$date) ## seems like this worked 10/17/21
+table(tab_data$week)
+
+# adding year and month variables
+tab_data <- tab_data %>%
+  mutate(
+    year = case_when(
+      grepl("2021", date) ~ "2021",
+      grepl("2020", date) ~ "2020",
+      grepl("2019", date) ~ "2019"), 
+    month = case_when(
+      grepl("-01-", date) ~ "January",
+      grepl("-02-", date) ~ "February",
+      grepl("-03-", date) ~ "March",
+      grepl("-04-", date) ~ "April",
+      grepl("-05-", date) ~ "May",
+      grepl("-06-", date) ~ "June",
+      grepl("-07-", date) ~ "July",
+      grepl("-08-", date) ~ "August",
+      grepl("-09-", date) ~ "September",
+      grepl("-10-", date) ~ "October",
+      grepl("-11-", date) ~ "November",
+      grepl("-12-", date) ~ "December"),
+    year.num = case_when(
+      year == "2019" ~ 1,
+      year == "2020" ~ 2, 
+      year == "2021" ~ 3),
+    month.num = case_when(
+      grepl("-01-", date) ~ 1,
+      grepl("-02-", date) ~ 2,
+      grepl("-03-", date) ~ 3,
+      grepl("-04-", date) ~ 4,
+      grepl("-05-", date) ~ 5,
+      grepl("-06-", date) ~ 6,
+      grepl("-07-", date) ~ 7,
+      grepl("-08-", date) ~ 8,
+      grepl("-09-", date) ~ 9,
+      grepl("-10-", date) ~ 10,
+      grepl("-11-", date) ~ 11,
+      grepl("-12-", date) ~ 12), 
+    Day.of.Week = "S")
+
+table(tab_data$survey.id)
+
+table(tab_data$use.type) # the codes I used - more description than NG use codes
+table(tab_data$NG.use.code)
+
+table(tab_data$NG.habitat.over)
+tab_data$NG.habitat.over <- recode(tab_data$NG.habitat.over, "road" = "none")
+
+table(tab_data$NG.habitat.under)
+tab_data$NG.habitat.under <- recode(tab_data$NG.habitat.under, "none" = "bare")
+tab_data$NG.habitat.under <- recode(tab_data$NG.habitat.under, "Perrenial grass" = "perrenial grass")
+tab_data$NG.habitat.under <- recode(tab_data$NG.habitat.under, " " = "bare")
+tab_data$NG.habitat.under <- recode(tab_data$NG.habitat.under, "nA" = "unknown")
+table(tab_data$NG.habitat.under)
+
+table(tab_data$num.people)
+table(tab_data$num.men)
+tab_data$num.men <- as.integer(tab_data$num.men)
+table(tab_data$num.women)
+table(tab_data$num.kids)
+tab_data$num.kids <- as.integer(tab_data$num.kids)
+
+tab_data$distance <- recode(tab_data$distance, "500+"="500")
+tab_data$distance <- as.integer(tab_data$distance)
+
+str(tab_data$bearing) # looks good
+
+# fix some route id names
+tab_data$survey.id <- recode(tab_data$survey.id, 
+                             "PV1-28918" = "PV1-28919",
+                             "SF1-090521" = "SF1-090520", 
+                             "SF1-090522" = "SF2-090520",
+                             "SF2-090521" = "SF2-090520",
+                             "SF2-090522" = "SF2-090520")
+
+head(tab_data)
+str(tab_data)
+
+#############################################################################################
+################################# Route TAB #################################################
+#############################################################################################
+
+# Bring in the route data -------------------------------------------------
+route_tab_data <- read.csv(here::here("datatemp/original/driving.routes.csv"))
+
+# Filtering out test routes
+route_tab <- filter(route_tab_data, route != "CC-TEST" & route !="SF-TEST")
+
+# Fix the mislabeled route 
+route_tab$route <- recode(route_tab$route, "SF1 " = "SF1")
+route_tab$route <- recode(route_tab$route, "PV1 " = "PV1")
+route_tab$route <- recode(route_tab$route, "PV 3" = "PV3")
+route_tab$route <- as.factor(route_tab$route)
+
+# fix mislabeled survey id
+route_tab$survey.id <- recode(route_tab$survey.id, 
+                              "B1-040420" = "BB1-040420", 
+                              "GV-030720" = "GV-070320", 
+                              "PV1-030621" = "PV1-060321")
+
+# check variables & make necessary changes
+route_tab$numeric_num_obs <- as.numeric(route_tab$num.obs)
+route_tab$numeric_num_shoot <- as.numeric(route_tab$num.shoot)
+
+str(route_tab$date)
+route_tab$Date <- as.Date(route_tab$date, "%d %B %Y")
+str(route_tab$Date)
+
+
+route_tab$start.time <- recode(route_tab$start.time, 
+                               "1413 - 1432" = "1413",
+                               "1440-1501" = "1440", 
+                               "1420-1445" = "1420", 
+                               "1144-1200" = "1144")
+route_tab$start.time2 <- as.numeric(route_tab$start.time)
+route_tab <- mutate(route_tab, time1 = case_when(
+  start.time2 <= 999 ~ paste0("0", start.time2), 
+  start.time2 >= 1000 ~ paste0(start.time2))) 
+route_tab$TimeDiff <- difftime(as.POSIXct(route_tab$time1, format = "%H%M"), 
+                              as.POSIXct("0:00", format = "%H:%M"), units = "min")
+
+# Route length - exact, calculated in QGIS
+route_tab <- route_tab %>%
+  mutate(rt_length = case_when(
+    route == "BB1" ~ 19.99, 
+    route == "BB2" ~ 13.56, 
+    route == "CC" ~ 16.00,
+    route == "GV" ~ 17.34,
+    route == "PV1" ~ 12.91,
+    route == "PV2" ~ 13.60,
+    route == "PV3" ~ 14.20,
+    route == "SC" ~ 16.21,
+    route == "SF1" ~ 11.12,
+    route == "SF2" ~ 18.69))
+
+route_tab <- route_tab %>%
+  mutate(
+    year = case_when(
+      grepl("2021", date) ~ "2021",
+      grepl("2020", date) ~ "2020",
+      grepl("2019", date) ~ "2019")) 
+
+library(weathermetrics)
+route_tab$tempC <- fahrenheit.to.celsius(route_tab$temp)
+
+table(route_tab$NG.weather)
+table(route_tab$month)
+```
+
+
+# Set CRS for spatial data - Lat/Long WGS 84 & NAD83 UTM Zone 11.  
+```{r}
+driving_pts_utm <- st_transform(driving_pts_ll, crs=st_crs(NCA_utm)) # re-projection command -> UTM Z11 NAD83
+HolaNests_utm <- st_transform(HolaNests_ll, crs = st_crs(NCA_utm)) # re-project -> NAD83 UTM zone 11N
+HolaNSA_utm <- st_transform(HolaNSA_ll, crs = st_crs(NCA_utm)) # re-project -> NAD83 UTM zone 11N
+PairedSites_utm <- st_transform(PairedSites_ll, crs=st_crs(NCA_utm)) # re-project -> NAD83 UTM zone 11N
+```
+
+# Join driving points & tabular data, filter by recreation type.  
+*Need the points to be in Lat/Long WGS 84 to start the process*
+```{r}
+driving_all_ll <- driving_pts_ll %>% 
+  left_join(., tab_data, by = c("name" = "point.id"))%>%
+  filter(., CHECK. == "YES")
+
+#### Make subsets of the data ####
+rec.ll <- filter(driving_all_ll, use.type == "bike and run" | use.type == "biking" | use.type == "birding" | use.type == "camp"
+                 | use.type == "camp and ohv" | use.type == "camp, ohv, kayak"| use.type == "camping"| use.type == "camping/ohv"
+                 | use.type == "collecting brass"| use.type == "driving off road"| use.type == "hiking"| use.type == "hiking/camping"
+                 | use.type == "horse riding"| use.type == "hunt and ohv" |use.type == "hunt and target"|use.type == "off road driving"
+                 | use.type == "ohv"| use.type == "ohv + target"| use.type == "ohv and camping" | use.type == "ohv and hunt"
+                 | use.type == "ohv and target"| use.type == "other - flying drone"| use.type == "other - picking up trash"
+                 | use.type == "clean up" | use.type == "photography"| use.type == "picking up shells"| use.type == "picking up trash"
+                 | use.type == "playing music"| use.type == "road bike"| use.type == "road biking"| use.type == "shooting"
+                 | use.type == "shooting-clay pigeons"| use.type == "shooting-garbage"| use.type == "shooting-grsq"
+                 | use.type == "shooting-target"| use.type == "sitting"| use.type == "sitting at overlook"
+                 | use.type == "sitting in car with binoculars"
+                 | use.type == "sitting in jeep"| use.type == "sitting on truck"| use.type == "target + photography"
+                 | use.type == "target and photography"| use.type == "target shoot & collecting brass"
+                 | use.type == "target shooting and hunting"
+                 | use.type == "target shooting and walking"| use.type == "training/shooting"| use.type == "walking" 
+                 | use.type == "walking dog"
+                 | use.type == "wildlife photography"| use.type == "militia")
+
+shoot.ll <- filter(driving_all_ll, NG.use.code == "hunting" | NG.use.code == "target shooting")
+
+hunt.ll <- filter(driving_all_ll, NG.use.code == "hunting")
+
+target.ll <- filter(driving_all_ll, NG.use.code == "target shooting")
+
+ohv.11 <- filter(driving_all_ll, NG.use.code == "motorized recreation")
+
+otherrec.11 <- filter(rec.ll, NG.use.code == "non-motorized recreation" | NG.use.code == "other")
+```
+
+# side - plot # obs/route for each survey for highest (PV1) & lowest (BB2) route (Figure 3 in manuscript)
+```{r}
+PV1.rec <- filter(rec.ll, route == "PV1")
+BB2.rec <- filter(rec.ll, route == "BB2")
+
+PV1.rec$Obs <- 1
+
+PV1.sum <- PV1.rec %>%
+  group_by(date) %>%
+  summarize(NumObs = sum(Obs))
+
+PV1.stats <- PV1.sum %>%
+  summarise(
+          MeanObs = mean (NumObs), 
+          SEObs = sd(NumObs),
+          MinObs = min(NumObs), 
+          MaxObs = max(NumObs))
+
+PV1.sum$SurveyDay <- 1:nrow(PV1.sum)
+
+library(ggplot2)
+high <- ggplot(data = PV1.sum, aes(SurveyDay, NumObs))+
+  geom_col() +
+  labs(title = "Highest use route (A)", x = "Survey day", y = "Recreation observations") + 
+  theme_classic()+
+  theme(text=element_text(family="Times New Roman", size=20))
+
+BB2.rec$Obs <- 1
+
+date.all <- PV1.sum$date
+
+BB2.sum <- BB2.rec %>%
+  group_by(date) %>%
+  summarize(NumObs = sum(Obs))
+
+
+b.df <- as.data.frame(date.all)
+b.df <- b.df %>%
+  mutate(Obs = case_when(
+    date.all == "2020-01-25" ~ 1, 
+    date.all == "2020-02-22" ~ 1,
+    date.all == "2020-07-11" ~ 1,
+    date.all == "2020-11-21" ~ 1,
+    date.all == "2021-02-06" ~ 1,
+    date.all == "2021-03-27" ~ 2,
+    date.all == "2021-05-01" ~ 1,
+    date.all == "2021-05-29" ~ 1))
+
+b.df$Obs <- b.df$Obs %>% replace(is.na(.), 0)
+b.df$SurveyDay <- 1:nrow(b.df)
+
+BB2.stats <- b.df %>%
+  summarise(
+          MeanObs = mean (Obs), 
+          SEObs = sd(Obs),
+          MinObs = min(Obs), 
+          MaxObs = max(Obs))
+
+library(ggplot2)
+low <- ggplot(data = b.df, aes(SurveyDay, Obs, ymax = 35))+
+  geom_col() +
+  scale_y_continuous(limits = c(0, 32))+
+  labs(title = "Lowest use route (B)", x = "Survey day", y = "Recreation observations") + 
+  theme_classic()+
+  theme(text=element_text(family="Times New Roman", size=20))
+
+
+library(gridExtra)
+grid.arrange(high, low, ncol = 2)
+```
+
+# calculate % shooting for paper
+```{r}
+table(rec.ll$NG.use.code)
+
+200 + 898 # shooting
+
+200 + 149 + 138 + 149 + 898 # all
+
+1098/1534
+
+149/1534
+(138 +149)/1534
+
+```
+
+# Extraction Process
+For loop - filter by time period, adjust point location, make a kernel density raster, extract recreation intensity for a given area (paired site, nests), and save extraction values in a dataframe. 
+
+If using the entire time frame, don't need to do a for loop, just use the functions.
+
+## Shooting Points for the duration of the study  
+Currently running with a 2 km buffer surrounding the paired sites
+```{r}
+shoot.adj <-  PointAdjust(shoot.ll)
+shoot.extract <-KD_extractsave(NCA_utm, shoot.adj, 1000, PairedSites_utm, 2000)
+shoot.results <- data.frame(row.names = PairedSites)
+shoot.results$all <- shoot.extract
+shoot.results
+```
+
+## Paired sites recreation intensity - comparing buffer size & results - *For analyses* (11/19/2021) + other rec groups (2/16/22)
+Using all recreation, each week of the study & 2000m buffer for 2021 study period (March - July).   
+Trying different buffer sizes - 500m, 1000m, 2000m, 5000m.  
+This is what I'll use in the analyses at the paired site level (ground squirrels, raptors & ravens, mammalian scavengers, HOLA/LBCU density).
+```{r}
+PairedSites_BufferComp <- data.frame(row.names = PairedSites) # empty dataframe to save results
+
+# for the entire duration of the study period, with different buffer sizes
+for(i in 1:10) {
+  
+  x_adj <- PointAdjust(rec.ll) # Adjust all recreation observation points
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, PairedSites_utm, 500*i) # extract w buffer size, increases by 500m
+  
+  PairedSites_BufferComp$x <- x_KD
+  
+  colnames(PairedSites_BufferComp)[i] <- paste0("WholeBuffer", i*500)
+}
+
+#### For March to July 2021 ####
+a <- rec.ll %>% filter(date > "2021-03-01") # filter just for the 2021 season
+a_adj <- PointAdjust(a) # adjust filtered points
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, PairedSites_utm, 2000) # extract with 2000 m buffer
+PairedSites_BufferComp$MarJul2021_Buffer2km <- a_KD # save extracted values in the dataframe
+
+kableExtra::kable(PairedSites_BufferComp)
+
+
+#### Looking at specific types of recreation for March to July 2021 ####
+# SHOOTING #
+b <- shoot.ll %>% filter(date > "2021-03-01")
+b_adj <- PointAdjust(b)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, PairedSites_utm, 2000)
+PairedSites_BufferComp$MarJul2021_Shoot <- b_KD
+
+# OHV #
+c <- ohv.11 %>% filter(date > "2021-03-01")
+c_adj <- PointAdjust(c)
+c_KD <- KD_extract(NCAplus_utm, c_adj, 1000, PairedSites_utm, 2000)
+PairedSites_BufferComp$MarJul2021_OHV <- c_KD
+
+# other rec # 
+d <- otherrec.11 %>% filter(date > "2021-03-01")
+d_adj <- PointAdjust(d)
+d_KD <- KD_extract(NCAplus_utm, d_adj, 1000, PairedSites_utm, 2000)
+PairedSites_BufferComp$MarJul2021_other <- d_KD
+
+#### Save csv ####
+write.csv(PairedSites_BufferComp, "PairedRecIntensity.csv") # this is the file that can be taken & used in HOLA analyses - saving in Driving Analysis folder
+
+write.csv(PairedSites_BufferComp, file = "/Users/madelineaberg/Desktop/HOLA2020/2020analysis/HOLA_analysis/datatemp/original/PairedRecIntensity.csv") # save in HOLA analysis R project
+
+
+
+### trying to extract for full NCA ####
+# all rec, full study 
+x_adj <- PointAdjust(rec.ll)
+NCA_x <- KD_extract(NCAplus_utm, x_adj, 1000, NCAplus_utm, 0)
+mean(NCA_x)
+
+# all, Mar - July 2021
+NCA_a <- KD_extract(NCAplus_utm, a_adj, 1000, NCAplus_utm, 0)
+mean(NCA_a)
+
+# shoot, Mar - Jul 2021
+NCA_b <- KD_extract(NCAplus_utm, b_adj, 1000, NCAplus_utm, 0)
+NCA_b
+mean(NCA_b)
+
+# ohv mar - jul 2021
+NCA_c <- KD_extract(NCAplus_utm, c_adj, 1000, NCAplus_utm, 0)
+mean(NCA_c)
+
+# other rec mar - jul 2021
+NCA_d <- KD_extract(NCAplus_utm, d_adj, 1000, NCAplus_utm, 0)
+mean(NCA_d)
+
+```
+
+Either the code isn't working or the buffer size doesn't make a difference. Checked this by manually changing the buffer size, and the extraction values did not change. So based on that, we should be able to use any buffer size.
+  
+Filtering by time period *does* make a difference (*makes sense, there are less points so lower intensity*). It does show a slightly different pattern between sites though - see how much higher PV2 is than SF1. 
+
+## HOLA nests for analyses
+Using all recreation for the duration of the field season (March - July 2020 & March - July 2021)
+Buffer sizes - 10m, 500m, 1000m, full NSA  
+*Feb 2022 - added 100m buffer, using for analysis*
+```{r}
+# Dataframe 
+HOLArec <- data.frame(row.names = HolaNests_utm$WhichNest)
+
+# Filter rec points by date
+MarJul2021 <- rec.ll %>% filter(date > "2021-03-01") # filter just for the 2021 season
+MarJul2020 <- rec.ll %>% filter(date > "2020-03-01" & date < "2020-08-01") # just 2020
+
+#### Compare buffer sizes ####
+a_adj <- PointAdjust(MarJul2020) # adjust filtered points
+b_adj <- PointAdjust(MarJul2021)
+# 10 m (territory)
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, HolaNests_utm, 10)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, HolaNests_utm, 10)
+HOLArec$Buffer10m_2020 <- a_KD
+HOLArec$Buffer10m_2021 <- b_KD
+# 100 m (territory +)
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, HolaNests_utm, 100)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, HolaNests_utm, 100)
+HOLArec$Buffer100m_2020 <- a_KD
+HOLArec$Buffer100m_2021 <- b_KD
+# 500 m 
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, HolaNests_utm, 500)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, HolaNests_utm, 500)
+HOLArec$Buffer500m_2020 <- a_KD
+HOLArec$Buffer500m_2021 <- b_KD
+# 1000 m
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, HolaNests_utm, 1000)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, HolaNests_utm, 1000)
+HOLArec$Buffer1000m_2020 <- a_KD
+HOLArec$Buffer1000m_2021 <- b_KD
+
+# look at values
+kableExtra::kable(HOLArec)
+
+ # this is the file that can be taken & used in HOLA analyses 
+write.csv(HOLArec, file = "/Users/madelineaberg/Desktop/MadelineAbergBSUDissertation/03_CSVData/HOLArec.csv") # save in HOLA analysis R project
+```
+
+
+## NSA rec intensity for LBCU analyses
+For now, using all recreation for the duration of the field season (May - July 2019, March - July 2020 & March - July 2021)
+Buffer sizes - 10m, 500m, 1000m, full NSA
+```{r}
+# Dataframe 
+NSArec <- data.frame(row.names = HolaNSA_utm$AreaName)
+
+# Filter rec points by date
+MarJul2021 <- rec.ll %>% filter(date > "2021-03-01") # filter just for the 2021 season
+MarJul2020 <- rec.ll %>% filter(date > "2020-03-01" & date < "2020-08-01") # just 2020
+MarJul2019 <- rec.ll %>% filter(date < "2019-08-01")
+
+#### Compare buffer sizes ####
+a_adj <- PointAdjust(MarJul2020) # adjust filtered points
+b_adj <- PointAdjust(MarJul2021)
+c_adj <- PointAdjust(MarJul2019)
+# 500 m buffer
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, HolaNSA_utm, 500)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, HolaNSA_utm, 500)
+c_KD <- KD_extract(NCAplus_utm, c_adj, 1000, HolaNSA_utm, 500)
+NSArec$Buffer500m_2020 <- a_KD
+NSArec$Buffer500m_2021 <- b_KD
+NSArec$Buffer500m_2019 <- c_KD
+
+# look at values
+kableExtra::kable(NSArec)
+
+write.csv(NSArec, "NSArec.csv") # this is the file that can be taken & used in HOLA analyses - saving in Driving Analysis folder
+write.csv(NSArec, file = "/Users/madelineaberg/Desktop/HOLA2020/2020analysis/HOLA_analysis/datatemp/original/NSArec.csv") # save in HOLA analysis R project
+
+```
+
+
+## LBCU Nests for analyses (Feb 2022)
+```{r}
+# Dataframe 
+LBCUrec <- data.frame(row.names = LbcuNests_utm$Nest.Name)
+
+# Filter rec points by date
+MarJun2021 <- rec.ll %>% filter(date > "2021-03-01" & date < "2021-07-01") # filter just for the 2021 season
+MarJun2020 <- rec.ll %>% filter(date > "2020-03-01" & date < "2020-07-01") # just 2020
+MarJun2019 <- rec.ll %>% filter(date < "2019-07-01")
+
+#### Compare buffer sizes ####
+a_adj <- PointAdjust(MarJun2019) # adjust filtered points
+b_adj <- PointAdjust(MarJun2020)
+c_adj <- PointAdjust(MarJun2021)
+
+# 10 m 
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, LbcuNests_utm, 10)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, LbcuNests_utm, 10)
+c_KD <- KD_extract(NCAplus_utm, c_adj, 1000, LbcuNests_utm, 10)
+LBCUrec$Buffer10m_2019 <- a_KD
+LBCUrec$Buffer10m_2020 <- b_KD
+LBCUrec$Buffer10m_2021 <- c_KD
+
+# 100 m 
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, LbcuNests_utm, 100)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, LbcuNests_utm, 100)
+c_KD <- KD_extract(NCAplus_utm, x_adj, 1000, LbcuNests_utm, 100)
+
+LBCUrec$Buffer100m_2019 <- a_KD
+LBCUrec$Buffer100m_2020 <- b_KD
+LBCUrec$Buffer100m_2021 <- c_KD
+
+# 500 m (territory)
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, LbcuNests_utm, 500)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, LbcuNests_utm, 500)
+c_KD <- KD_extract(NCAplus_utm, c_adj, 1000, LbcuNests_utm, 500)
+
+LBCUrec$Buffer500m_2019 <- a_KD
+LBCUrec$Buffer500m_2020 <- b_KD
+LBCUrec$Buffer500m_2021 <- c_KD
+
+# 1000 m
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, LbcuNests_utm, 1000)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, LbcuNests_utm, 1000)
+c_KD <- KD_extract(NCAplus_utm, c_adj, 1000, LbcuNests_utm, 1000)
+
+LBCUrec$Buffer1000m_2019 <- a_KD
+LBCUrec$Buffer1000m_2020 <- b_KD
+LBCUrec$Buffer1000m_2021 <- c_KD
+
+# look at values
+kableExtra::kable(LBCUrec)
+
+write.csv(LBCUrec, "LBCUrec.csv") # this is the file that can be taken & used in HOLA analyses - saving in Driving Analysis folder
+write.csv(LBCUrec, file = "/Users/madelineaberg/Desktop/HOLA2020/2020analysis/HOLA_analysis/datatemp/original/LBCUrec.csv") # save in HOLA analysis R project
+
+```
+
+
+
+## Trying for loop by time periods 
+
+### By week - all rec, paired sites (not working (11/19/21)... gets stuck after Week 3 & PV1 isn't working even with the larger window)
+```{r}
+AllRec_Weeks <- data.frame(row.names = HolaNests_ll$WhichNest)
+
+for (i in 1:62) { 
+  x <- rec.ll %>% filter(week==i) # dataframe filtered for week i
+  
+  x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from week i
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, HolaNests_utm, 100)
+  
+  AllRec_Weeks$x <- x_KD
+  
+  colnames(AllRec_Weeks)[i] <- paste0("Week",i)
+}
+
+AllRec_Weeks
+```
+
+### by year - all recreation, NCAplus (working 11/01/2021)
+```{r}
+AllRec_Years <- data.frame(row.names = PairedSites)
+
+for (i in 1:3) {
+  x <- rec.ll %>% filter(year.num == i) # filter for each year (2019 = 1, 2020 = 2, 2021 = 3)
+  
+  x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from year i
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, PairedSites_utm, 2000) # kernel density with adjusted points
+   
+  AllRec_Years$y <- x_KD # add extraction values to the dataframe
+  
+  colnames(AllRec_Years)[i] <- paste0("Year",i) # rename column 
+}
+
+AllRec_Years
+```
+Lower recreational use in 2021 in SF1, PV1, PV2, CC2, BB2 (barely), PV3.  
+Higher use in CC1, BB1, BB3, SF2
+
+### by month - all recreation, NCAplus (working 11/01/2021)
+right now this is grouping observations from all years for a month 
+might be worth trying to group by month but also by year 
+```{r}
+AllRec_Months <- data.frame(row.names = PairedSites)
+
+for (i in 1:12) {
+  x <- rec.ll %>% filter(month.num == i) # filter for each month (2019 = 1, 2020 = 2, 2021 = 3)
+  
+  x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from month i
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, PairedSites_utm, 2000) # kernel density with adjusted points
+   
+  AllRec_Months$y <- x_KD # add extraction values to the dataframe
+  
+  colnames(AllRec_Months)[i] <- paste0("Month",i) # rename column 
+}
+
+AllRec_Months
+```
+
+# HOLA Nests
+
+## study duration with HOLA nests - testing buffer size
+want to test 50m, 1000m, entire NSA as buffer sizes 
+```{r}
+HOLA_BufferComp <- data.frame(row.names = HolaNests_ll$WhichNest) # empty dataframe to save results
+
+# for the entire duration of the study period, with different buffer sizes
+for(i in 1:10) {
+  
+  x_adj <- PointAdjust(rec.ll) # Adjust all recreation observation points
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, PairedSites_utm, 500*i) # extract w buffer size, increases by 500m
+  
+  HOLA_BufferComp$x <- x_KD
+  
+  colnames(HOLA_BufferComp)[i] <- paste0("WholeBuffer", i*500)
+}
+```
+
+## HOLA nests for analyses
+For now, using all recreation for the duration of the field season (March - July 2020 & March - July 2021)
+Buffer sizes - 10m, 500m, 1000m, full NSA
+```{r}
+# Dataframe 
+HOLArec <- data.frame(row.names = HolaNests_utm$WhichNest)
+
+# Filter rec points by date
+MarJul2021 <- rec.ll %>% filter(date > "2021-03-01") # filter just for the 2021 season
+MarJul2020 <- rec.ll %>% filter(date > "2020-03-01" & date < "2020-08-01") # just 2020
+
+#### Compare buffer sizes ####
+a_adj <- PointAdjust(MarJul2020) # adjust filtered points
+b_adj <- PointAdjust(MarJul2021)
+# 10 m (territory)
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, HolaNests_utm, 10)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, HolaNests_utm, 10)
+HOLArec$Buffer10m_2020 <- a_KD
+HOLArec$Buffer10m_2021 <- b_KD
+
+# 100 m (territory)
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, HolaNests_utm, 100)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, HolaNests_utm, 100)
+HOLArec$Buffer100m_2020 <- a_KD
+HOLArec$Buffer100m_2021 <- b_KD
+
+# 500 m 
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, HolaNests_utm, 500)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, HolaNests_utm, 500)
+HOLArec$Buffer500m_2020 <- a_KD
+HOLArec$Buffer500m_2021 <- b_KD
+# 1000 m
+a_KD <- KD_extract(NCAplus_utm, a_adj, 1000, HolaNests_utm, 1000)
+b_KD <- KD_extract(NCAplus_utm, b_adj, 1000, HolaNests_utm, 1000)
+HOLArec$Buffer1000m_2020 <- a_KD
+HOLArec$Buffer1000m_2021 <- b_KD
+
+# look at values
+kableExtra::kable(HOLArec)
+
+write.csv(HOLArec, "HOLArec.csv") # this is the file that can be taken & used in HOLA analyses - saving in Driving Analysis folder
+write.csv(HOLArec, file = "/Users/madelineaberg/Desktop/HOLA2020/2020analysis/HOLA_analysis/datatemp/original/HOLArec.csv") # save in HOLA analysis R project
+
+```
+Some of the nests don't work with the 10m buffer -> not using that. Not seeing differences between 500m and 1000m, so I'll use 500m. 
+
+## Trying for loop by time periods 
+
+### By week - all rec, paired sites (not working (11/19/21)... gets stuck after Week 3 & PV1 isn't working even with the larger window)
+```{r}
+AllRec_Weeks <- data.frame(row.names = HolaNests_ll$WhichNest)
+
+for (i in 1:62) { 
+  x <- rec.ll %>% filter(week==i) # dataframe filtered for week i
+  
+  x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from week i
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, HolaNests_utm, 500)
+  
+  AllRec_Weeks$x <- x_KD
+  
+  colnames(AllRec_Weeks)[i] <- paste0("Week",i)
+}
+
+AllRec_Weeks
+```
+
+### by year - all recreation, NCAplus (working 11/01/2021)
+```{r}
+AllRec_Years <- data.frame(row.names = PairedSites)
+
+for (i in 1:3) {
+  x <- rec.ll %>% filter(year.num == i) # filter for each year (2019 = 1, 2020 = 2, 2021 = 3)
+  
+  x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from year i
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, PairedSites_utm, 2000) # kernel density with adjusted points
+   
+  AllRec_Years$y <- x_KD # add extraction values to the dataframe
+  
+  colnames(AllRec_Years)[i] <- paste0("Year",i) # rename column 
+}
+
+AllRec_Years
+```
+Lower recreational use in 2021 in SF1, PV1, PV2, CC2, BB2 (barely), PV3.  
+Higher use in CC1, BB1, BB3, SF2
+
+### by month - all recreation, NCAplus (working 11/01/2021)
+right now this is grouping observations from all years for a month 
+might be worth trying to group by month but also by year 
+```{r}
+AllRec_Months <- data.frame(row.names = PairedSites)
+
+for (i in 1:12) {
+  x <- rec.ll %>% filter(month.num == i) # filter for each year (2019 = 1, 2020 = 2, 2021 = 3)
+  
+  x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from year i
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, PairedSites_utm, 2000) # kernel density with adjusted points
+   
+  AllRec_Months$y <- x_KD # add extraction values to the dataframe
+  
+  colnames(AllRec_Months)[i] <- paste0("Month",i) # rename column 
+}
+
+AllRec_Months
+```
+
+# HOLA Nests
+
+## study duration with HOLA nests - testing buffer size
+want to test 50m, 1000m, entire NSA as buffer sizes 
+```{r}
+HOLA_BufferComp <- data.frame(row.names = HolaNests_ll$WhichNest) # empty dataframe to save results
+
+# for the entire duration of the study period, with different buffer sizes
+for(i in 1:10) {
+  
+  x_adj <- PointAdjust(rec.ll) # Adjust all recreation observation points
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, PairedSites_utm, 500*i) # extract w buffer size, increases by 500m
+  
+  HOLA_BufferComp$x <- x_KD
+  
+  colnames(HOLA_BufferComp)[i] <- paste0("WholeBuffer", i*500)
+}
+```
+
+
+## by year with HOLA nests - all rec, NCAplus
+```{r}
+HOLAAllRec_Years <- data.frame(row.names = HolaNests_ll$WhichNest)
+
+for (i in 1:3) {
+  x <- rec.ll %>% filter(year.num == i) # filter for each year (2019 = 1, 2020 = 2, 2021 = 3)
+  
+  x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from year i
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, HolaNests_utm, 2000) # kernel density with adjusted points
+   
+  HOLAAllRec_Years$y <- x_KD # add extraction values to the dataframe
+  
+  colnames(HOLAAllRec_Years)[i] <- paste0("Year",i) # rename column 
+}
+
+HOLAAllRec_Years
+```
+
+
+### by month with HOLA nests - all rec, NCAplus
+```{r, eval=FALSE}
+HOLAAllRec_Months <- data.frame(row.names = PairedSites)
+
+for (i in 1:12) {
+  x <- rec.ll %>% filter(month.num == i) # filter for each year (2019 = 1, 2020 = 2, 2021 = 3)
+  
+  x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from year i
+  
+  x_KD <- KD_extract(NCAplus_utm, x_adj, 1000, HolaNests_utm, 2000) # kernel density with adjusted points
+   
+  HOLAAllRec_Months$y <- x_KD # add extraction values to the dataframe
+  
+  colnames(HOLAAllRec_Months)[i] <- paste0("Month",i) # rename column 
+}
+
+HOLAAllRec_Months
+```
+
+#######################
+
+### by month with KD_extractsave - saves rasters in DrivingRasters folder - not working 11/19/2021
+```{r,eval=FALSE}
+AllRec_Months_2 <- data.frame(row.names = PairedSites)
+
+for (i in 1:12) {
+  x <- rec.ll %>% filter(month.num == i) # filter for each month (Jan = 1, Feb = 2, etc)
+  
+  x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from month i
+  
+  x_KD <- KD_extractsave(NCAplus_utm, x_adj, 1000, PairedSites_utm, 2000) # kernel density with adjusted points
+   
+  AllRec_Months$x <- x_KD # add extraction values to the dataframe
+  
+  colnames(AllRec_Months_2)[i] <- paste0("Month",i) # rename column 
+  
+  e <- paste0('month', i, '.tif') # name of saved raster 
+  file.rename(paste0("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/", "raster99.tif"),
+            paste0("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/", e)) # rename saved raster
+}
+
+AllRec_Months_2
+```
+
+
+# Plotting the rasters
+*following example from https://stackoverflow.com/questions/36671499/color-ramp-with-the-same-colour-scale-across-different-plots-in-r * 
+
+## Get range of data values across the two rasters
+rng = range(c(getValues(r1), getValues(r2)))
+
+## Plot using a scale with that range
+gplot(r1) + 
+  geom_tile(aes(fill=value)) +
+  ggtitle("r1") +
+  scale_fill_gradient2(low="red", mid="green", high="blue", 
+                       midpoint=mean(rng),    # Value that gets the middle color (default is zero)
+                       breaks=seq(-100,100,10),  # Set whatever breaks you want
+                       limits=c(floor(rng[1]), ceiling(rng[2])))  # Set the same limits for each plot
+
+gplot(r2) + 
+  geom_tile(aes(fill=value)) +
+  ggtitle("r2") +
+  scale_fill_gradient2(low="red", mid="green", high="blue", 
+                       midpoint=mean(rng),    # Value that gets the middle color (default is zero)
+                       breaks=seq(-100,100,10),  # Set whatever breaks you want
+                       limits=c(floor(rng[1]), ceiling(rng[2])))  # Set the same limits for each plot
+
+
+
+# Code Graveyard - make sure all code chunks are set to eval = FALSE when running 
+
+## BOU (Nov 2021) - shouldn't run when Knitting the Rmd
+```{r, eval=FALSE}
+
+############ for BOU messing with code ######
+HolaNests_utm$name
+
+AllRec_Weeks_Nests <- data.frame(row.names = HolaNests_utm$name)
+
+##
+library(dplyr)
+
+x <- driving_all_ll %>% filter(week == 34) # dataframe filtered for week i
+  
+x_adj <- PointAdjust(x) # Go through the PointAdjust function with points from week i
+  
+x_KD <- KD_extractsave(NCA_utm, x_adj, 1000, HolaNests_utm, 2000)
+  
+AllRec_Weeks_Nests$Week34 <- x_KD
+  
+e <- paste0('week', 34, '.tif') # name of saved raster 
+file.rename(paste0("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/", "raster99.tif"),
+            paste0("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/", e)) # rename saved raster
+
+write.csv(AllRec_Weeks_Nests, file = "/Users/madelineaberg/Desktop/NestRec.csv")
+
+
+##### STUCK HERE ####
+
+library(rasterVis)
+library(ggplot2)
+
+r1 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week1.tif")
+r2 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week2.tif")
+r3 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week3.tif")
+r4 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week4.tif")
+r5 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week5.tif")
+r6 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week6.tif")
+r7 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week7.tif")
+r8 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week8.tif")
+r9 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week9.tif")
+r10 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week10.tif")
+r11 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week11.tif")
+r12 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week12.tif")
+r13 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week13.tif")
+r14 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week14.tif")
+r15 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week15.tif")
+r16 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week16.tif")
+r17 <- raster("/Users/madelineaberg/Desktop/Driving Analysis/DrivingRasters/week17.tif")
+
+rng <- range(c(getValues(r1), getValues(r2)), na.rm = TRUE)
+   # getValues(r3), getValues(r4),getValues(r5),getValues(r6),getValues(r7),getValues(r8),getValues(r9),getValues(r10),getValues(r11),getValues(r12),getValues(r13),getValues(r14),getValues(r15),getValues(r16),getValues(r17)), na.rm = TRUE)
+
+mid_rng <- mean(c(getValues(r1), getValues(r2)), na.rm = TRUE)
+
+##
+ggplot2::ggplot() +
+  geom_raster(data = r1_df, aes(fill=value)) +
+  ggtitle("Week 1") + 
+  scale_fill_gradient2(low = "red", mid = "green", high = "blue", 
+                       midpoint=mean(rng),    # Value that gets the middle color (default is zero)
+                       breaks=seq(-100,100,10),  # Set whatever breaks you want
+                       limits=c(floor(rng[1]), ceiling(rng[2])))  # Set the same limits for each plot
+
+
+### example
+r1<- raster(ncol=56, nrow=26)
+r1[] <- runif(n=56*26,min=-20,max=15)
+
+r2<- raster(ncol=56, nrow=26)
+r2[] <- runif(n=56*26,min=-14,max=68)
+
+# Get range of data values across the two rasters
+rng = range(c(getValues(r1), getValues(r2)))
+
+gplot(r1) + 
+  geom_tile(aes(fill=value)) +
+  ggtitle("r1") +
+  scale_fill_gradient2(low="white",high="blue", 
+                       midpoint=mid_rng,    # Value that gets the middle color (default is zero)
+                       #breaks = waiver(),
+                       #minor_breaks = waiver(),
+                       breaks = seq(0,0.0000018,100),
+                       #breaks=waiver() #seq(-100,100,10),  # Set whatever breaks you want
+                      limits=c(floor(rng[1]), ceiling(rng[2])))  # Set the same limits for each plot
+
+
+```
+
+
+
+
