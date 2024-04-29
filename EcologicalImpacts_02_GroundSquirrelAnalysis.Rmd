@@ -1,0 +1,370 @@
+---
+title: "Manuscript_GRSQ"
+author: "Madeline Aberg"
+date: '2022-06-13'
+output: pdf_document
+---
+# Ground Squirrel Analysis 
+# Last updated: 29 April 2024
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript")
+
+# load packages
+library(nmixgof) # evaluating N-mixture models
+library(tidyverse)
+library(unmarked) # runs the N-mixture models
+library(MuMIn) # calculates pseudo R^2
+library(AICcmodavg) # gof tests (Duarte et al. 2018)
+library(reshape2)
+```
+
+# Overview
+
+## Data Collection
+These data were collected by Lucian Davis and Richard Mervin in the spring/summer of 2021 following the protocol designed by Jen Cruz. At each of our paired sites, we selected a 100 m x 100 m area where we counted Piute ground squirrels. The squirrel survey areas were placed in the corner of the paired site closest to the road (but at least 50m from the road), with one exception (SF2) where the survey area was moved out of unsuitable habitat. Observers counted independent auditory and visual detections of ground squirrels along transects and for 2 minutes at each corner of the square. We waited to conduct surveys until squirrels were active above ground to maximize our chance of detecting squirrels where they were present. We conducted 3 surveys at each site between May 6, 2021 and June 14, 2021. 
+
+## Data Analysis
+Using a closed population (single-season, no migration) N-mixture analysis, which is a hierarchical model with (1) an ecological submodel that links estimated abundance to environmental predictors and (2) an observation submodel that links detection probability to predictors.
+
+### Environmental predictors
+* Recreation intensity (continuous)  
+* Presence of shrub cover (binary)   
+
+### Detectionn predictors
+* Day of Year  
+* Time (minutes past 12:00 AM)  
+* Wind speed (km per hour)  
+* Temp (degrees Celcius)  
+* Observer experience level (> 1 year = experienced & < 1 year = novice)
+
+### Analysis notes
+* Combined auditory and visual detections - observers aimed to count each individual once  
+* Standardized predictor variables with the equation from Gelman 2008 to be consistent with other analyses - did NOT use the unmarked package standardization  
+* Used the default value for k (max observed + 100)  
+* Didn't use weather as a detection predictor because there were too many categories for the number of observations and we expected that temperature and wind speed covered the most relevant aspects of the weather categories.
+
+# Resources
+This script follows the CountDataPrep.R and CountAnalysis.R scripts created by Dr. Jen Cruz, which can be accessed here: https://github.com/quantitativeconservationlab/AppPopnEco 
+
+# Load Data
+
+```{r}
+grsqcount <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/GroundSquirrel_Clean_29April2024.csv")
+```
+
+
+## Check predictor distributions & correlations
+```{r}
+#### DETECTION PREDICTORS ####
+prednames_grsq <- c("Wind.KMH", "Temp.Celcius", "DOY", "TimeDiffSunrise")
+
+# loop over each to create histograms for each predictor:
+for( p in 1:length(prednames_grsq) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( grsqcount ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_grsq[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_grsq[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+# correlation among predictors. Removing any with correlation > 0.6 
+grsq.cor <- cor(grsqcount[ , prednames_grsq] )
+grsq.cor
+symnum(grsq.cor) # all < 0.6 
+
+#### ABUNDANCE PREDICTORS ####
+prednames_grsq2 <- c("Rec", "shrub.per", "shrub.pt")
+for( p in 1:length(prednames_grsq2) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( grsqcount ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_grsq2[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_grsq2[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+grsq.cor2 <- cor(grsqcount[ , prednames_grsq2] )
+grsq.cor2
+symnum(grsq.cor2) #<0.3
+
+plot(grsqcount$shrub.binary)
+```
+
+## Standardize predictors
+Using function from Gelman 2008. This is not used for categorical or binary variables. 
+```{r}
+#### FUNCTION ####
+stdize<-function(x) {(x-mean(x))/(2*sd(x))}  
+
+grsqcount$wind.st <- stdize(grsqcount$Wind.KMH)
+grsqcount$temp.st <- stdize(grsqcount$Temp.Celcius)
+grsqcount$doy.st <- stdize(grsqcount$DOY)
+grsqcount$time.st <- stdize(grsqcount$TimeDiffSunrise)
+grsqcount$rec.st <- stdize(grsqcount$Rec)
+grsqcount$shrub.st <- stdize(grsqcount$shrub.pt)
+```
+
+## Put into UMF dataframe for analysis with the unmarked package
+```{r}
+# select only the columns that will be used
+grsq.df <- grsqcount %>% 
+  dplyr::select(c(Site.ID, Survey.Day, obs.expr, wind.st, temp.st, doy.st, time.st, rec.st, shrub.binary, shrub.st, count)) 
+
+head(grsq.df)
+
+# Right now we have one row per survey day per site (30 obs of 12 var)
+# Need to put into a dataframe with one row per site & count/detection columns per survey day 
+grsq.wide <- grsq.df %>%
+  pivot_wider(
+  id_cols = c(Site.ID, rec.st, shrub.binary, shrub.st), 
+  names_from = Survey.Day, 
+  names_glue = "{Survey.Day}_{.value}", 
+  values_from = c(wind.st, temp.st, doy.st, time.st, obs.expr, count))
+
+# define unmarked dataframe for the analysis 
+grsq.umf <- unmarkedFramePCount( y = as.matrix( grsq.wide[ ,c("1_count", "2_count", "3_count")]),
+                # Define predictors at the site level:
+                siteCovs = grsq.wide[ ,c("rec.st", "shrub.binary", "shrub.st")], 
+                # Define predictors at the survey level as a list:
+                obsCovs = list(
+                  obs.expr = grsq.wide[ ,c("1_obs.expr", "2_obs.expr", "3_obs.expr")],
+                  dOy =grsq.wide[, c("1_doy.st", "2_doy.st", "3_doy.st")],
+                  time = grsq.wide[ ,c('1_time.st', '2_time.st',"3_time.st") ], 
+                  wind = grsq.wide[, c("1_wind.st", "2_wind.st", "3_wind.st")],
+                  temp = grsq.wide[, c("1_temp.st", "2_temp.st", "3_temp.st")]))
+
+# check dataframe
+summary(grsq.umf)
+```
+
+# Variable descriptions for variable summary table & in text
+```{r}
+## add counts
+grsq.min <- min(grsqcount$count)
+grsq.max <- max(grsqcount$count)
+grsq.mean <- mean(grsqcount$count)
+grsq.median <- median(grsqcount$count)
+
+rec.min <- min(grsqcount$Rec)
+rec.max <- max(grsqcount$Rec)
+rec.mean <- mean(grsqcount$Rec)
+rec.sd <- sd(grsqcount$Rec)
+
+table(grsqcount$shrub.binary)
+
+doy.min <- min(grsqcount$DOY)
+doy.max <- max(grsqcount$DOY)
+doy.mean <- mean(grsqcount$DOY)
+
+time.min <- min(grsqcount$TimeDiff)
+time.min/60 # hour
+0.75 * 60 # minutes
+time.max <- max(grsqcount$TimeDiff)
+time.max/60 # hour
+0.1 * 60 # minutes
+time.mean <- mean(grsqcount$TimeDiff)
+time.mean/60 # hour
+0.19667 * 60 # minutes
+
+sunrisetime.min <- min(grsqcount$TimeDiffSunrise)
+sunrisetime.min/60 # hour
+666667 * 60 # minutes
+sunrisetime.max <- max(grsqcount$TimeDiffSunrise)
+sunrisetime.max/60 # hour
+066667 * 60 # minutes
+sunrisetime.mean <- mean(grsqcount$TimeDiffSunrise)
+sunrisetime.mean/60 # hour
+043889 * 60 # minutes
+
+wind.min <- min(grsqcount$Wind.KMH)
+wind.max <- max(grsqcount$Wind.KMH)
+wind.mean <- mean(grsqcount$Wind.KMH)
+
+temp.min <- min(grsqcount$Temp.Celcius)
+temp.max <- max(grsqcount$Temp.Celcius)
+temp.mean <- mean(grsqcount$Temp.Celcius)
+
+table(grsqcount$obs.expr)
+
+shrub.min <- min(grsqcount$shrub.per)
+shrub.max <- max(grsqcount$shrub.per)
+shrub.mean <- mean(grsqcount$shrub.per)
+
+shrub.min <- min(grsqcount$shrub.pt)
+shrub.max <- max(grsqcount$shrub.pt)
+shrub.mean <- mean(grsqcount$shrub.pt)
+```
+
+# Model
+```{r}
+grsq.mod.nb <- pcount(~1 + +dOy + time + wind + temp + obs.expr # observation submodel
+                       ~1 + rec.st + shrub.st, # ecological submodel
+                       K = 133, # using default: max observed + 100
+                      mixture = "NB", 
+                      data = grsq.umf)
+```
+
+## Goodness of Fit
+*Nmix.gof.test*
+```{r}
+# compute observed chi-square, assess significance, estimate c-hat
+
+gof.boot <- Nmix.gof.test(grsq.mod.nb, nsim = 1000, print.table = TRUE)
+gof.boot
+```
+The model does not pass (p = 0.018).
+
+*Use gof checks (Knape et al. 2018 MEE 9: 2102 - 2114)*
+```{r}
+chat(grsq.mod.nb, type = "marginal")
+chat(grsq.mod.nb, type = "site-sum")
+chat(grsq.mod.nb, type = "observation")
+
+# Plot residuals against fitted values. Site-sum randomized quantile residuals are used for site covariates & marginal residuals are used for observation covariates
+residfit(grsq.mod.nb, type = "site-sum") # observation covariates
+residfit(grsq.mod.nb, type = "observation") # observation model residuals
+
+# Plot QQ plots of randomized residuals against standard normal quantiles. Under good fit, residuals should be close to the identity line
+residqq(grsq.mod.nb, type = "site-sum")
+residqq(grsq.mod.nb, type = "observation")
+
+```
+The model doesn't appear to fit well, but these tests are known to have problems when used with binomial variables. Because of this, we proceeded with the model. 
+
+## Model Parameters for Table 1
+```{r}
+#### MODEL SUMMARY ####
+summary(grsq.mod.nb)
+
+#### 95% CI ####
+confint(grsq.mod.nb, type = "state") # ecological submodel
+confint(grsq.mod.nb, type = "det") # detection submodel
+```
+
+## Model Results used in the text
+### Abundance estimates
+
+```{r}
+lambda.hat.grsq <- predict(grsq.mod.nb, type = "state") # expected abundance for each site 
+
+
+min(lambda.hat.grsq$Predicted)
+max(lambda.hat.grsq$Predicted)
+```
+
+### Detection Probability
+
+```{r}
+plogis(coef(grsq.mod.nb[2])) # detection submodel is binomial, so a logit scale
+plogis(0.2123000) # detect intercept SE
+```
+
+### Abundance
+```{r}
+exp(coef(grsq.mod.nb[1]))# ecological submodel is Poisson, so it's on a log scale
+exp(0.359 ) # intercept SE
+`````````
+
+# Effect of Recreation
+```{r}
+## Effect of lowest vs highest recreation
+rec.effect <- data.frame(rec = c(rec.min, rec.max), 
+                         shrub.st = 0)
+
+rec.effect$rec.st <- ((rec.effect$rec) - rec.mean)/ (2*rec.sd)
+
+Lpred.rec <- predict(grsq.mod.nb, type = "state", newdata = rec.effect) 
+28.05 - 47.37 # grsq @ min rec - grsq @ max rec
+
+```
+
+# Figure 
+## Dataframes with predictions
+```{r}
+# Range of recreation intensity values for predictions
+rec <- seq(9e-12, 9.5e-6,,200)
+rec <- seq(rec.min, rec.max,, 200)
+
+# standardize recreation values based on the mean & sd from the data
+rec.mean <- mean(grsqcount$Rec)
+rec.sd <- sd(grsqcount$Rec)
+grsq.st <- function(x) {(x-rec.mean)/(2*rec.sd)}
+
+rec.st <- grsq.st(rec)
+
+#### Plot of predicted ground squirrel abundance across a range of recreation intensity with shrub cover (A) ####
+lamNewData.shrub <- data.frame(rec = rec, rec.st = rec.st, shrub.st = 0) # same predictor values but with shrubs present now
+lamNewData.shrub$shrub.binary <- as.factor(lamNewData.shrub$shrub.binary)
+
+# make predictions
+pred.shrub <- predict(grsq.mod, type = "state", newdata = lamNewData.shrub)
+pred.shrub$rec <- lamNewData.shrub$rec
+
+#### Plot with no shrub cover (B) ####
+# create dataframe
+lamNewData.noshrub <- data.frame(rec = rec, rec.st = rec.st, shrub.binary = 0)
+lamNewData.noshrub$shrub.binary <- as.factor(lamNewData.noshrub$shrub.binary)
+
+# make predictions
+pred.noshrub <- predict(grsq.mod, type = "state", newdata = lamNewData.noshrub) # Lambda predictions
+pred.noshrub$rec <- lamNewData.noshrub$rec
+
+#### PLOT ####
+#### A #### 
+plot(pred.shrub$Predicted ~ pred.shrub$rec, type = "l", lwd = 2, col = "blue", main = "A - Shrubs Present", xlab = "Recreation Intensity", ylab = "Predicted Ground Squirrel Abundance", las = 1, ylim = c(0,200), frame = F)
+matlines(pred.shrub$rec, cbind(pred.shrub$lower, pred.shrub$upper), type = "l", lty = 1, lwd = 1, col = "grey")
+
+#### B ####
+plot(pred.noshrub$Predicted ~ pred.noshrub$rec, type = "l", lwd = 2, col = "blue", main = "B - No Shrubs Present", xlab = "Recreation Intensity", ylab = "Predicted Ground Squirrel Abundance", las = 1, ylim = c(0,200), frame = F)
+matlines(pred.noshrub$rec, cbind(pred.noshrub$lower, pred.noshrub$upper), type = "l", lty = 1, lwd = 1, col = "grey")
+
+#### GGPLOT ATTEMPT ####
+library(ggplot2)
+library(extrafont)
+library(gridExtra)
+
+```
+
+
+
+### NEW - FEB 2024 - JWM revisions
+```{r}
+new.data <- data.frame(rec = rec.st, 
+                       shrub.st = 0)
+
+pred <- predict(grsq.mod.nb, type = "state", newdata = new.data)
+pred$rec <- rec
+pred$x <-1
+
+Fig4 <- ggplot(pred, aes(rec, Predicted, 
+                         color = as.factor(x), 
+                         fill = as.factor(x))) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = Predicted - SE, ymax = Predicted + SE), alpha = 0.1) +
+  scale_fill_manual(values = "grey40") +
+  scale_color_manual(values="grey40") +
+  theme_classic() + 
+  labs(x = "Recreation intensity", y = "Predicted ground squirrels/ha")+
+  theme(legend.position = "none")
+  #theme(text=element_text(family="Times New Roman", size=14))
+
+Fig4
+
+ggsave("C:/Users/Madeline/Desktop/NEWgrsq.jpg", width = 4, height = 2.5, units = "in", 
+       dpi = 400)
+
+```
+
+
+
+
+
