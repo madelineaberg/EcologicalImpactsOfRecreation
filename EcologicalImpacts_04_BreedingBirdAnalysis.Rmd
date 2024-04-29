@@ -1,0 +1,529 @@
+---
+title: "Manuscript_HolaLbcuDensity"
+author: "Madeline Aberg"
+date: '2022-06-30'
+output: pdf_document
+---
+
+# Last updated: 9 Aug 2023
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Distance) # for Conventional Distance Sampling
+library(dplyr)
+library(lubridate)
+library(weathermetrics)
+library(ggplot2)
+```
+
+# Overview
+## Data Collection
+We conducted point counts for horned larks and long-billed curlews at each paired site from April 2-14, 2021. Within the 1 km2 paired sites, we created grids of 16 survey points and followed the Integrated Monitoring in Bird Conservation Regions field protocol (McLaren et al. 2019). At each point, we recorded the date, time, percent cloud cover, wind speed according to the Beaufort scale, temperature, and habitat within a 50 m radius. We then recorded all species of birds present at the point during a 6-minute survey. For each independently detected bird, we recorded the point number, the minute during the count in which it was detected, radial distance to the bird, detection method, and sex of the bird. We did not include juveniles in the count.
+
+## Analysis 
+To estimate density, we used the ‘Distance’ package in R to analyze our point count data with distance sampling (Miller et al. 2017). We created a detection function from our counts, which models the probability of detecting an object at a distance, then used the best detection function to estimate density. We tested half-normal and hazard-rate key detection functions and selected hazard-rate based on a lower AICc value and goodness-of-fit test results. We added covariates that may have impacted detectability:  
+- Date   
+- Time  
+- Temperature  
+
+We then modeled the differences in site-level density based on the recreation intensity, % herbaceous cover, and % shrub cover of the site using a Poisson glm.
+
+### Analysis Notes
+We tried to use hierarchical distance sampling, which combines these two models and propogates the error in the density estimate. However, this produced unreasonably large density estimates (800 hola/kmsq). The trends and effect sizes seen are very similar with the two modeling techniques. 
+
+# Load  Data
+```{r}
+hola_ptcount2021 <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/HOLA_PointCount_Clean_29April2024.csv")
+
+lbcu_ptcount2021 <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/LBCU_PointCount_Clean_29April2024.csv")
+```
+
+# HOLA Modeling 
+## Look at predictors
+```{r}
+# Detection predictors
+prednames_hola <- c("DOY", "Temp.Celcius", "TimeDiffSunrise")
+
+# loop over each to create histograms for each predictor:
+for( p in 1:length(prednames_hola) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( hola_ptcount2021 ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_hola[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_hola[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+# correlation among predictors. > 0.8 would be severe multicolinearity 
+hola.cor <- cor(hola_ptcount2021[ , prednames_hola] )
+hola.cor
+symnum(hola.cor) # all < 0.4 
+
+# Abundance predictors
+prednames_hola2 <- c("Rec", "perShrub", "herbaceous")
+
+# Abundance predictors
+for( p in 1:length(prednames_hola2) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( hola_ptcount2021 ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_hola2[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_hola2[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+hola.cor2 <- cor(hola_ptcount2021[ ,prednames_hola2])
+hola.cor2
+symnum(hola.cor2)
+```
+## Look at distance histogram
+```{r}
+hist(hola_ptcount2021$distance)
+max(hola_ptcount2021$distance, na.rm = TRUE)
+min(hola_ptcount2021$distance, na.rm = TRUE)
+
+site.sum <- hola_ptcount2021 %>% 
+  group_by(Region.Label) %>%
+  summarize(Detections = sum(Detection))
+hist(site.sum$Detections)
+mean(site.sum$Detections)
+median(site.sum$Detections)
+```
+
+## Distance models
+Based on this, the models using a truncation at 125m have a much lower AIC than models with 250m or 10% truncation. Both of these models pass the goodness of fit test. The half normal model has a delta AIC of +11 compared to the hazard rate model, so we used the hazard rate model with covariates moving forward. 
+**UPDATE** Using half-normal because it handles coefficients better 
+### Selecting a detection function & truncation distance
+```{r}
+# 10% truncation
+hola.hn.d1 <- ds(hola_ptcount2021, key = "hn", transect = "point", adjustment = NULL, truncation = "10%") # half-normal
+hola.hr.d1 <- ds(hola_ptcount2021, key = "hr", transect = "point", adjustment = NULL, truncation = "10%") # hazard-rate
+
+# truncate at 250 m
+hola.hn.d2 <- ds(hola_ptcount2021, key = "hn", transect = "point", adjustment = NULL, truncation = 250) # half-normal
+hola.hr.d2 <- ds(hola_ptcount2021, key = "hr", transect = "point", adjustment = NULL, truncation = 250) # hazard-rate
+
+# truncate at 125 m
+hola.hn.d3 <- ds(hola_ptcount2021, key = "hn", transect = "point", adjustment = NULL, truncation = 125) # half-normal
+hola.hr.d3 <- ds(hola_ptcount2021, key = "hr", transect = "point", adjustment = NULL, truncation = 125) # hazard-rate
+
+# Goodness of Fit
+gof_ds(hola.hn.d1) # fails
+gof_ds(hola.hr.d1) # passes
+gof_ds(hola.hn.d2) # fails
+gof_ds(hola.hr.d2) # passes
+gof_ds(hola.hn.d3) # passes (barely 0.06)
+gof_ds(hola.hr.d3) # passes
+
+# Compare AIC
+AIC(hola.hn.d1, hola.hn.d2, hola.hn.d3, hola.hr.d1, hola.hr.d2, hola.hr.d3)
+
+# Look at density estimates for each
+summary(hola.hn.d1) # 21 (SF 1&2) to 212 (CC1)
+summary(hola.hr.d1) # 16 (SF1&2) to 164 (CC1)
+summary(hola.hn.d2) # 21 (SF1&2) to 208 (CC1)
+summary(hola.hr.d2) # 16 (SF1&2) to 162 (CC1)
+summary(hola.hn.d3) # 25 (SF1&2) to 93 (BB3)
+summary(hola.hr.d3) # 18 (BB1) to 84 (BB3)
+```
+
+### Full distance sampling model
+```{r}
+# Using
+hola.ds.mod <- ds(hola_ptcount2021, key = "hn", formula = ~ date.st + time.st + temp.st, transect = "point", adjustment = NULL, truncation = 125)
+
+summary(hola.ds.mod)
+
+Region.Label <- c("BB1", "BB2", "BB3", "CC1", "CC2", "PV1", "PV2", "PV3", "SF1", "SF2")
+hola.ds.est <- c(17, 38, 141, 50, 127, 28, 32, 43, 22, 23) # from model summary
+est.df <- data.frame(Region.Label, hola.ds.est)
+```
+
+## Poisson Model
+### Prep dataframe - need site-level data
+```{r}
+hss <- hola_ptcount2021 %>%
+  group_by(Region.Label)%>%
+  summarize(
+    Date = mean(DOY),
+    Time.Start = min(Time.Start), 
+    Observer = Observer, 
+    Wind = Wind, 
+    Temp = mean(Temp.Celcius),
+    Sky = mean(Sky), 
+    perShrub = mean(perShrub), 
+    perHerb = mean(herbaceous),
+    Rec = Rec)
+
+hola.site.summary <- distinct(hss) # 1 row per site with averaged values
+
+hola.site.summary <- left_join(hola.site.summary, est.df)
+
+#standardize predictors
+hola.site.summary$rec.st <- stdize(hola.site.summary$Rec)
+hola.site.summary$shrub.st <- stdize(hola.site.summary$perShrub)
+hola.site.summary$herb.st <- stdize(hola.site.summary$perHerb)
+```
+
+### Model parameter summary
+```{r}
+rec.min <- min(hola.site.summary$Rec)
+rec.max <- max(hola.site.summary$Rec)
+rec.mean <- mean(hola.site.summary$Rec)
+rec.sd <- sd(hola.site.summary$Rec)
+
+shrub.min <- min(hola.site.summary$perShrub)
+shrub.max <- max(hola.site.summary$perShrub)
+shrub.mean <- mean(hola.site.summary$perShrub)
+shrub.sd <- sd(hola.site.summary$perShrub)
+
+herb.min <- min(hola.site.summary$perHerb)
+herb.max <- max(hola.site.summary$perHerb)
+herb.mean <- mean(hola.site.summary$perHerb)
+herb.sd <- sd(hola.site.summary$perShrub)
+
+date.min <- min(hola.site.summary$Date)
+date.max <- max(hola.site.summary$Date)
+date.mean <- mean(hola.site.summary$Date)
+
+temp.min <- min(hola.site.summary$Temp)
+temp.max <- max(hola.site.summary$Temp)
+temp.mean <- mean(hola.site.summary$Temp)
+```
+
+
+### Model
+```{r}
+hola.mod <- glm(hola.ds.est ~ rec.st + shrub.st + herb.st, data = hola.site.summary, family = "poisson")
+```
+
+### Model Summary for Table 5
+```{r}
+summary(hola.mod)
+confint(hola.mod)
+```
+
+### Model summary for in text
+Estimated horned lark density was 44.33 ± 1.05 larks per km2 at the mean value of all density submodel parameters.
+```{r}
+exp(coef(hola.mod))
+exp(0.05109) # intercept se
+```
+Estimated horned lark density decreased by X across the range of recreation intensity
+```{r}
+rec.effect <- data.frame(rec = c(rec.min, rec.max), 
+                         shrub.st = 0, herb.st = 0)
+
+rec.effect$rec.st <- ((rec.effect$rec) - rec.mean)/ (2*rec.sd)
+
+effect.rec  <- make_predictions(hola.mod, pred = rec.st, new_data = rec.effect, interval = TRUE)
+
+55.21233 -19.69339 
+```
+
+
+decreased by X across the range of shrub cover
+```{r}
+shrub.effect <- data.frame(shrub = c(shrub.min, shrub.max), 
+                         rec.st = 0, herb.st = 0)
+
+shrub.effect$shrub.st <- ((shrub.effect$shrub) - shrub.mean)/ (2*shrub.sd)
+
+effect.shrub <- make_predictions(hola.mod, pred = shrub.st, new_data = shrub.effect, interval = TRUE) 
+
+55.65222 - 18.63190
+```
+
+and increased by X over the range of herbaceous cover
+```{r}
+herb.effect <- data.frame(herb = c(herb.min, herb.max), 
+                          rec.st = 0, shrub.st = 0)
+herb.effect$herb.st <- ((herb.effect$herb) - herb.mean)/(2*herb.sd)
+
+effect.herb <- make_predictions(hola.mod, pred = herb.st, new_data = herb.effect, interval = TRUE) 
+78.87597 - 36.96534		 
+```
+
+# LBCU Modeling
+## Look at predictors
+```{r}
+# Detection predictors
+prednames_lbcu <- c("DOY", "Temp.Celcius", "TimeDiffSunrise")
+
+# loop over each to create histograms for each predictor:
+for( p in 1:length(prednames_lbcu) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( lbcu_ptcount2021 ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_lbcu[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_lbcu[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+# correlation among predictors. > 0.8 would be severe multicolinearity 
+lbcu.cor <- cor(lbcu_ptcount2021[ , prednames_lbcu] )
+lbcu.cor
+symnum(lbcu.cor) # temp & date are very high... but weren't for hola?
+
+# Abundance predictors
+prednames_lbcu2 <- c("Rec", "perShrub", "herbaceous")
+
+# Abundance predictors
+for( p in 1:length(prednames_lbcu2) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( lbcu_ptcount2021 ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_lbcu2[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_lbcu2[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+lbcu.cor2 <- cor(lbcu_ptcount2021[ ,prednames_lbcu2])
+lbcu.cor2
+symnum(lbcu.cor2)
+```
+
+## Look at distance histogram
+```{r}
+hist(lbcu_ptcount2021$distance)
+max(lbcu_ptcount2021$distance, na.rm = TRUE)
+min(lbcu_ptcount2021$distance, na.rm = TRUE)
+
+site.sum <- lbcu_ptcount2021 %>% 
+  group_by(Region.Label) %>%
+  summarize(Detections = sum(Detection))
+hist(site.sum$Detections)
+mean(site.sum$Detections)
+median(site.sum$Detections)
+```
+
+## Distance models
+### Selecting a detection function & truncation distance
+Not much difference between the AIC for models 
+```{r}
+# 10% truncation
+lbcu.hn.d1 <- ds(lbcu_ptcount2021, key = "hn", transect = "point", adjustment = NULL, truncation = "10%") # half-normal
+lbcu.hr.d1 <- ds(lbcu_ptcount2021, key = "hr", transect = "point", adjustment = NULL, truncation = "10%") # hazard-rate
+
+# truncate at 250 m
+lbcu.hn.d2 <- ds(lbcu_ptcount2021, key = "hn", transect = "point", adjustment = NULL, truncation = 800) # half-normal
+lbcu.hr.d2 <- ds(lbcu_ptcount2021, key = "hr", transect = "point", adjustment = NULL, truncation = 800) # hazard-rate
+
+# truncate at 125 m
+lbcu.hn.d3 <- ds(lbcu_ptcount2021, key = "hn", transect = "point", adjustment = NULL, truncation = 750) # half-normal
+lbcu.hr.d3 <- ds(lbcu_ptcount2021, key = "hr", transect = "point", adjustment = NULL, truncation = 750) # hazard-rate
+
+# Goodness of Fit
+gof_ds(lbcu.hn.d1) # passes
+gof_ds(lbcu.hr.d1) # passes
+gof_ds(lbcu.hn.d2) # passes
+gof_ds(lbcu.hr.d2) # passes
+gof_ds(lbcu.hn.d3) # passes 
+gof_ds(lbcu.hr.d3) # passes
+
+# Compare AIC
+AIC(lbcu.hn.d1, lbcu.hn.d2, lbcu.hn.d3, lbcu.hr.d1, lbcu.hr.d2, lbcu.hr.d3)
+
+# Look at density estimates for each
+summary(lbcu.hn.d1) # 0 (PV3) to 5 (CC1)
+summary(lbcu.hr.d1) # 0 (PV3) to 5 (CC1)
+summary(lbcu.hn.d2) # 0 (PV3) to 5 (CC1)
+summary(lbcu.hr.d2) # 0 (PV3) to 6 (CC1)
+summary(lbcu.hn.d3) # 0 (PV3) to 6 (CC1)
+summary(lbcu.hr.d3) # 0 (PV3) to 6 (CC1)
+```
+Going with lbcu.hr.d1
+
+### Full distance sampling model
+```{r}
+lbcu.ds.mod <- ds(lbcu_ptcount2021, key = "hr", transect = "point",
+               formula = ~ date.st + time.st + temp.st,adjustment = NULL,
+               truncation = "10%") 
+
+summary(lbcu.ds.mod)
+
+lbcu.ds.est <- c(0, 0, 1, 8, 1, 4, 2, 0, 0, 2)
+lbcu.est.df <- data.frame(Region.Label, lbcu.ds.est)
+```
+
+## Poisson Model
+### Prep dataframe - need site-level data
+```{r}
+lss <- lbcu_ptcount2021 %>%
+  group_by(Region.Label)%>%
+  summarize(
+    Date = mean(DOY),
+    Time.Start = min(Time.Start), 
+    Observer = Observer, 
+    Wind = Wind, 
+    Temp = mean(Temp.Celcius),
+    Sky = mean(Sky), 
+    perShrub = mean(perShrub), 
+    perHerb = mean(herbaceous),
+    Rec = Rec)
+
+lbcu.site.summary <- distinct(lss) # 1 row per site with averaged values
+
+lbcu.site.summary <- left_join(lbcu.site.summary, lbcu.est.df)
+
+# need to add in the missing sites
+ptdata <- hola.site.summary %>% dplyr::select(., c(Region.Label, 
+                                                  Date, Time.Start,
+                                                  Observer,Wind,
+                                                  Temp, Sky, 
+                                                  perShrub, perHerb, 
+                                                  Rec))
+ptdata2 <- filter(ptdata, Region.Label == "BB1" |
+                    Region.Label == "BB2" |
+                    Region.Label == "SF1")
+
+lbcu.site.summary <- full_join(lbcu.site.summary, ptdata2)
+lbcu.site.summary$lbcu.ds.est <- lbcu.site.summary$lbcu.ds.est %>% replace(is.na(.), 0)
+
+#standardize predictors
+lbcu.site.summary$rec.st <- stdize(lbcu.site.summary$Rec)
+lbcu.site.summary$shrub.st <- stdize(lbcu.site.summary$perShrub)
+lbcu.site.summary$herb.st <- stdize(lbcu.site.summary$perHerb)
+```
+
+### Model
+```{r}
+lbcu.mod <- glm(lbcu.ds.est ~ rec.st + shrub.st + herb.st, data = lbcu.site.summary, family = "poisson")
+```
+
+### Model summary for table 6
+```{r}
+summary(lbcu.mod)
+confint(lbcu.mod)
+```
+
+### Model summary for in text
+Estimated long-billed curlew density was 1.56 ± 1.31 curlews per km2 at the mean value of all density submodel parameters. 
+```{r}
+exp(coef(lbcu.mod))
+exp(0.2677) # intercept se
+```
+
+
+Estimated curlew density increased by X curlews/km with an across the range of percent herbaceous cover
+```{r}
+herb.effect <- data.frame(herb = c(herb.min, herb.max), 
+                         shrub.st = 0, rec.st = 0)
+
+herb.effect$herb.st <- ((herb.effect$herb) - herb.mean)/ (2*herb.sd)
+
+effect.herb <- make_predictions(lbcu.mod, pred = herb.st, new_data = herb.effect, interval = TRUE)
+
+7.6004218	-0.9465679	 
+```
+
+
+increased by X curlews/km across the range of recreation intensity
+```{r}
+rec.effect <- data.frame(rec = c(rec.min, rec.max), 
+                         shrub.st = 0, herb.st = 0)
+
+rec.effect$rec.st <- ((rec.effect$rec) - rec.mean)/ (2*rec.sd)
+
+effect.rec <- make_predictions(lbcu.mod, pred = rec.st, new_data = rec.effect, interval = TRUE)
+
+2.518584-1.369815 
+```
+
+and decreased by X curlews/km across the range of percent shrub cover.
+```{r}
+shrub.effect <- data.frame(shrub = c(shrub.min, shrub.max), 
+                         rec.st = 0, herb.st = 0)
+
+shrub.effect$shrub.st <- ((shrub.effect$shrub) - shrub.mean)/ (2*shrub.sd)
+
+effect.shrub <- make_predictions(lbcu.mod, pred = shrub.st, new_data = shrub.effect, interval = TRUE)
+
+2.037025-0.563623 
+```
+
+
+# Figure 
+```{r}
+library(ggplot2)
+library(extrafont)
+library(gridExtra)
+```
+
+## Predictor Values
+```{r}
+# Range of values for predictions
+rec <- seq(rec.min, rec.max,,200)
+shrub  <- seq(shrub.min, shrub.max,,200)
+herb <- seq(herb.min, herb.max,,200)
+
+# standardize recreation values based on the mean & sd from the data
+rec.st <- ((rec) - rec.mean)/ (2*rec.sd)
+shrub.st <- ((shrub) - shrub.mean)/(2*shrub.sd)
+herb.st <- ((herb) - herb.mean)/(2*herb.sd)
+
+# standardized rec levels for other predictors 
+rec.mean.st <- ((rec.mean) - rec.mean)/(2*rec.sd)
+rec.min.st <- ((rec.min) - rec.mean)/(2*rec.sd)
+rec.max.st <- ((rec.max) - rec.mean)/(2*rec.sd)
+```
+
+## HOLA graphs
+```{r}
+# rec
+NewL.rec <- data.frame(rec.st = rec.st, shrub.st = 0, herb.st = 0)
+Lpred.rec <- make_predictions(hola.mod, pred = rec.st, new_data = NewL.rec, interval = TRUE) # creates df with predictions
+Lpred.rec$rec <- rec # add a column with the real # values used to get these predictions
+
+Lpred.rec$x <- 1
+
+A1 <- ggplot(data = Lpred.rec, mapping = aes(x=rec, y=hola.ds.est, 
+                                             color = as.factor(x), 
+                                             fill = as.factor(x)))+
+  geom_line(size = 1)+
+  ylim(0,85)+
+  scale_fill_manual(values = "grey40") +
+  scale_color_manual(values="grey40") +
+  geom_ribbon(aes(ymin = ymin, ymax=ymax), alpha = 0.1)+
+  theme_classic() + 
+  labs( x = "Recreation intensity", y = "Predicted larks/"~km^2)+
+  theme(legend.position = "none") +
+  theme(text=element_text(family="Times New Roman", size=12))
+
+ggsave("C:/Users/Madeline/Desktop/NEWholadensity.jpg", width = 4, height = 2.5, units = "in",
+       dpi = 400)
+```
+
+## LBCU graphs
+```{r}
+# rec
+NewL.rec <- data.frame(rec.st = rec.st, shrub.st = 0, herb.st = 0)
+Lpred.rec <- make_predictions(lbcu.mod, pred = rec.st, new_data = NewL.rec, interval = TRUE) # creates df with predictions
+Lpred.rec$rec <- rec # add a column with the real # values used to get these predictions
+
+Lpred.rec$x <- 1
+
+A2 <- ggplot(data = Lpred.rec, mapping = aes(x=rec, y=lbcu.ds.est, 
+                                             color = as.factor(x), 
+                                             fill = as.factor(x)))+
+  geom_line(size = 1)+
+  scale_fill_manual(values = "grey40") +
+  scale_color_manual(values="grey40") +
+  geom_ribbon(aes(ymin = ymin, ymax=ymax), alpha = 0.1)+
+  theme_classic() + 
+  labs( x = "Recreation intensity", y = "Predicted curlews/"~km^2)+
+  theme(legend.position = "none") +
+  theme(text=element_text(family="Times New Roman", size=12))
+
+ggsave("C:/Users/Madeline/Desktop/NEWlbcudensity.jpg", width = 4, height = 2.5, units = "in",
+       dpi = 400)
+```
+
