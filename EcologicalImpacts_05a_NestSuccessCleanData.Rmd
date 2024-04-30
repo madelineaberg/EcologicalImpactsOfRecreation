@@ -7,10 +7,6 @@ output: pdf_document
 # Clean data for HOLA & LBCU nest success analysis
 # 29 April 2024
 
-#### LBCU - model is still messed up, think rec specifically is doing it... 
-#### plots are still not really working - shouldn't be out of the 0 to 1 range??? 
-
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
@@ -212,6 +208,8 @@ HOLAnests.Active$initiate_std <- stdize(HOLAnests.Active$InitiationDOY)
 ### Save HOLA
 ```{r}
 write.csv(HOLAnests.Active, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/HOLA_NestSuccess_Clean_29April2024.csv")
+
+write.csv(HOLAnests.Veg, "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/HOLA_NestSuccess_Veg_Clean_29April2024.csv")
 ```
 
 ## LBCU
