@@ -1,0 +1,821 @@
+---
+title: "Manuscript_NestSuccess"
+author: "Madeline Aberg"
+date: '2022-07-02'
+output: pdf_document
+---
+# HOLA & LBCU nest success analysis
+# 1 May 2024
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(lubridate)
+library(lme4)
+library(MuMIn)
+library(car)
+library(jtools)
+library(MASS)
+library(ggplot2)
+```
+
+# Load Data
+HOLA
+```{r}
+HOLAnests.Active <- read.csv( "C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/HOLA_NestSuccess_Clean_29April2024.csv")
+
+HOLAnests.Veg <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/HOLA_NestSuccess_Veg_Clean_29April2024.csv")
+```
+
+LBCU
+```{r}
+LBCUnests <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/LBCU_NestSuccess_Clean_29April2024.csv")
+```
+
+# Mayfield Nest Success Estimates
+## HOLA
+### All active nests
+```{r}
+# Create high and low recreation datasets 
+  LowRec <- subset(HOLAnests.Active, Location == "CinderCone")
+  HighRec <- subset(HOLAnests.Active, Location == "PleasantValley")
+  LowRec2020 <- filter(LowRec, Year == 2020)
+  LowRec2021 <- filter(LowRec, Year == 2021)
+  HighRec2020 <- filter(HighRec, Year == 2020)
+  HighRec2021 <- filter(HighRec, Year == 2021)
+
+# HighRec2020 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     HighRec2020$exposure_days_total <- HighRec2020$endDOY - HighRec2020$foundDOY
+
+  
+    # create a variable with the number of failures
+        HighRec2020$fail_yn <- ifelse(HighRec2020$Fate.2 == "failed", 1, 0)
+    
+        total_fail <- sum(HighRec2020$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # create a variable with the total number of exposure days
+        exposure_days <- sum(HighRec2020$exposure_days_total)
+      
+        exposure_days # total exposure days for all nests in the study
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_high2020H <- total_fail / exposure_days
+        
+        r_high2020H # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_high2020H <-  1 - r_high2020H 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+
+        d_H <- 19 
+        MS_high2020H <- S_high2020H ^ d_H
+
+        MS_high2020H
+
+ # LowRec2020 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     LowRec2020$exposure_days_total <- LowRec2020$endDOY - LowRec2020$foundDOY
+    
+    # create a variable with the number of failures
+        LowRec2020$fail_yn <- ifelse(LowRec2020$Fate.2 == "failed", 1, 0)
+    
+        total_fail <- sum(LowRec2020$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # create a variable with the total number of exposure days
+        exposure_days <- sum(LowRec2020$exposure_days_total)
+      
+        exposure_days # total exposure days for all nests in the study
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_low2020H <- total_fail / exposure_days
+        
+        r_low2020H # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_low2020H <-  1 - r_low2020H 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_low2020H <- S_low2020H ^ d_H
+
+        MS_low2020H      
+        
+ # HighRec2021 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     HighRec2021$exposure_days_total <- HighRec2021$endDOY - HighRec2021$foundDOY
+
+  
+    # create a variable with the number of failures
+        HighRec2021$fail_yn <- ifelse(HighRec2021$Fate.2 == "failed", 1, 0)
+    
+        total_fail <- sum(HighRec2021$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # create a variable with the total number of exposure days
+        exposure_days <- sum(HighRec2021$exposure_days_total)
+      
+        exposure_days # total exposure days for all nests in the study
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_high2021H <- total_fail / exposure_days
+        
+        r_high2021H # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_high2021H <-  1 - r_high2021H 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+
+        d_H <- 19 
+        MS_high2021H <- S_high2021H ^ d_H
+
+        MS_high2021H   
+        
+        
+ # LowRec2021 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     LowRec2021$exposure_days_total <- LowRec2021$endDOY - LowRec2021$foundDOY
+    
+    # create a variable with the number of failures
+        LowRec2021$fail_yn <- ifelse(LowRec2021$Fate.2 == "failed", 1, 0)
+    
+        total_fail <- sum(LowRec2021$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # create a variable with the total number of exposure days
+        exposure_days <- sum(LowRec2021$exposure_days_total)
+      
+        exposure_days # total exposure days for all nests in the study
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_low2021H <- total_fail / exposure_days
+        
+        r_low2021H # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_low2021H <-  1 - r_low2021H 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_low2021H <- S_low2021H ^ d_H
+
+        MS_low2021H     
+```
+
+### LBCU?
+```{r}
+# Create high and low recreation datasets -----------------------------------------------
+  LowRec <- subset(HOLAnests.Veg, Location == "CinderCone")
+  HighRec <- subset(HOLAnests.Veg, Location == "PleasantValley")
+  LowRec2020 <- filter(LowRec, Year == 2020)
+  LowRec2021 <- filter(LowRec, Year == 2021)
+  HighRec2020 <- filter(HighRec, Year == 2020)
+  HighRec2021 <- filter(HighRec, Year == 2021)
+
+# HighRec2020 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     HighRec2020$exposure_days_total <- HighRec2020$endDOY - HighRec2020$foundDOY
+
+  
+    # create a variable with the number of failures
+        HighRec2020$fail_yn <- ifelse(HighRec2020$Fate.2 == "failed", 1, 0)
+    
+        total_fail <- sum(HighRec2020$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # create a variable with the total number of exposure days
+        exposure_days <- sum(HighRec2020$exposure_days_total)
+      
+        exposure_days # total exposure days for all nests in the study
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_high2020H <- total_fail / exposure_days
+        
+        r_high2020H # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_high2020H <-  1 - r_high2020H 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+
+        d_H <- 19 
+        MS_high2020H <- S_high2020H ^ d_H
+
+        MS_high2020H
+
+ # LowRec2020 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     LowRec2020$exposure_days_total <- LowRec2020$endDOY - LowRec2020$foundDOY
+    
+    # create a variable with the number of failures
+        LowRec2020$fail_yn <- ifelse(LowRec2020$Fate.2 == "failed", 1, 0)
+    
+        total_fail <- sum(LowRec2020$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # create a variable with the total number of exposure days
+        exposure_days <- sum(LowRec2020$exposure_days_total)
+      
+        exposure_days # total exposure days for all nests in the study
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_low2020H <- total_fail / exposure_days
+        
+        r_low2020H # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_low2020H <-  1 - r_low2020H 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_low2020H <- S_low2020H ^ d_H
+
+        MS_low2020H      
+        
+        
+# HighRec2021 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     HighRec2021$exposure_days_total <- HighRec2021$endDOY - HighRec2021$foundDOY
+
+  
+    # create a variable with the number of failures
+        HighRec2021$fail_yn <- ifelse(HighRec2021$Fate.2 == "failed", 1, 0)
+    
+        total_fail <- sum(HighRec2021$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # create a variable with the total number of exposure days
+        exposure_days <- sum(HighRec2021$exposure_days_total)
+      
+        exposure_days # total exposure days for all nests in the study
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_high2021H <- total_fail / exposure_days
+        
+        r_high2021H # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_high2021H <-  1 - r_high2021H 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_high2021H <- S_high2021H ^ d_H
+
+        MS_high2021H
+        
+ # LowRec2021 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     LowRec2021$exposure_days_total <- LowRec2021$endDOY - LowRec2021$foundDOY
+    
+    # create a variable with the number of failures
+        LowRec2021$fail_yn <- ifelse(LowRec2021$Fate.2 == "failed", 1, 0)
+    
+        total_fail <- sum(LowRec2021$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # create a variable with the total number of exposure days
+        exposure_days <- sum(LowRec2021$exposure_days_total)
+      
+        exposure_days # total exposure days for all nests in the study
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_low2021H <- total_fail / exposure_days
+        
+        r_low2021H # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_low2021H <-  1 - r_low2021H 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_low2021H <- S_low2021H ^ d_H
+
+        MS_low2021H     
+```
+
+## LBCU
+```{r}
+# Create high and low recreation datasets -----------------------------------------------
+  LowRec <- subset(LBCUnests, Subsite == "Cinder Cone")
+  HighRec <- subset(LBCUnests, Subsite == "Pleasant Valley")
+  LowRec2019 <- filter(LowRec, year == 2019)
+  LowRec2020 <- filter(LowRec, year == 2020)
+  LowRec2021 <- filter(LowRec, year == 2021)
+  HighRec2019 <- filter(HighRec, year == 2019)
+  HighRec2020 <- filter(HighRec, year == 2020)
+  HighRec2021 <- filter(HighRec, year == 2021)
+
+
+d_L = 33 # length of nesting cycle
+
+# HighRec2019 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     exposure_days_total <- sum(HighRec2019$exposure_days)
+
+    # create a variable with the number of failures
+        HighRec2019 <- mutate(HighRec2019, fail_yn = case_when(
+          fate == "fail" | fate == "Fail" ~ 1, 
+          fate == "hatch" | fate == "Hatch" ~0))
+      
+        total_fail <- sum(HighRec2019$fail_yn)
+        
+        total_fail # total nest failures
+  
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_high2019L <- total_fail / exposure_days_total
+        
+        r_high2019L  # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_high2019L <-  1 - r_high2019L 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_high2019L <- S_high2019L ^ d_L
+
+        MS_high2019L
+        
+# HighRec2020 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     exposure_days_total <- sum(HighRec2020$exposure_days)
+
+    # create a variable with the number of failures
+        HighRec2020 <- mutate(HighRec2020, fail_yn = case_when(
+          fate == "fail" | fate == "Fail" ~ 1, 
+          fate == "hatch" | fate == "Hatch" ~0))
+      
+        total_fail <- sum(HighRec2020$fail_yn)
+        
+        total_fail # total nest failures
+    
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_high2020L <- total_fail / exposure_days_total
+        
+        r_high2020L # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_high2020L <-  1 - r_high2020L 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_high2020L <- S_high2020L ^ d_L
+
+        MS_high2020L
+        
+# HighRec2021 DSR & Mayfield Est. ---------------------------------------------------------------
+
+    # calculate exposure days for each nest = end_julian - found_julian 
+     exposure_days_total <- sum(HighRec2021$exposure_days)
+
+    # create a variable with the number of failures
+        HighRec2021 <- mutate(HighRec2021, fail_yn = case_when(
+          fate == "fail" | fate == "Fail" ~ 1, 
+          fate == "hatch" | fate == "Hatch" ~0))
+      
+        total_fail <- sum(HighRec2021$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_high2021L <- total_fail / exposure_days_total
+        
+        r_high2021L # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_high2021L <-  1 - r_high2021L 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_high2021L <- S_high2021L ^ d_L
+
+        MS_high2021L
+        
+# LowRec2019 DSR & Mayfield Est. ---------------------------------------------------------------
+
+  # calculate exposure days for each nest = end_julian - found_julian 
+     exposure_days_total <- sum(LowRec2019$exposure_days)
+
+  # create a variable with the number of failures
+        LowRec2019 <- mutate(LowRec2019, fail_yn = case_when(
+          fate == "fail" | fate == "Fail" ~ 1, 
+          fate == "hatch" | fate == "Hatch" ~0))
+      
+        total_fail <- sum(LowRec2019$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_low2019L <- total_fail / exposure_days_total
+        
+        r_low2019L # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_low2019L <-  1 - r_low2019L 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_low2019L <- S_low2019L ^ d_L
+        MS_low2019L
+        
+# LowRec2020 DSR & Mayfield Est. ---------------------------------------------------------------
+
+  # calculate exposure days for each nest = end_julian - found_julian 
+      exposure_days_total <- sum(LowRec2020$exposure_days)
+
+  # create a variable with the number of failures
+        LowRec2020 <- mutate(LowRec2020, fail_yn = case_when(
+          fate == "fail" | fate == "Fail" ~ 1, 
+          fate == "hatch" | fate == "Hatch" ~0))
+      
+        total_fail <- sum(LowRec2020$fail_yn)
+        
+        total_fail # total nest failures
+    
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_low2020L <- total_fail / exposure_days_total
+        
+        r_low2020L # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_low2020L <-  1 - r_low2020L 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_low2020L <- S_low2020L ^ d_L
+        MS_low2020L
+        
+# LowRec2021 DSR & Mayfield Est. ---------------------------------------------------------------
+
+  # calculate exposure days for each nest = end_julian - found_julian 
+      exposure_days_total <- sum(LowRec2021$exposure_days)
+
+  # create a variable with the number of failures
+        LowRec2021 <- mutate(LowRec2021, fail_yn = case_when(
+          fate == "fail" | fate == "Fail" ~ 1, 
+          fate == "hatch" | fate == "Hatch" ~0))
+      
+        total_fail <- sum(LowRec2021$fail_yn)
+        
+        total_fail # total nest failures
+
+    # calculate daily failure rate r = Failed/Exposure days
+  
+        r_low2021L <- total_fail / exposure_days_total
+        
+        r_low2021L # daily failure rate for the nests 
+    
+    # calculate daily survival rate S = 1 - r
+      
+        S_low2021L <-  1 - r_low2021L 
+
+    # calculate mayfield success = S^d where d = number of days in the nesting cycle 
+        MS_low2021L <- S_low2021L ^ d_L
+        MS_low2021L
+```
+
+## Mayfield sample size
+```{r}
+table(LBCUnests$year, LBCUnests$Subsite)
+```
+
+
+# Nest Success Modeling
+## Logistic Exposure Link
+```{r}
+# Logistic Exposure Link
+logexp <- function(days = 1)
+{
+  linkfun <- function(mu) qlogis(mu^(1/days))
+  linkinv <- function(eta) plogis(eta)^days
+  mu.eta  <- function(eta) days * plogis(eta)^(days-1) *
+    binomial()$mu.eta(eta)
+  valideta <- function(eta) TRUE
+  link <- paste0("logexp(", days, ")")
+  structure(list(linkfun = linkfun, linkinv = linkinv,
+                 mu.eta = mu.eta, valideta = valideta, name = link),
+            class = "link-glm")
+}
+```
+
+## HOLA
+### predictors
+```{r}
+# Site-level predictors
+prednames_hola <- c("rec", "InitiationDOY", "conceal_sum", "predator", "consp_total")
+
+# loop over each to create histograms for each predictor:
+for( p in 1:length(prednames_hola) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( HOLAnests.Active ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_hola[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_hola[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+# correlation among predictors. > 0.8 would be severe multicolinearity, 0.6 is iffy 
+hola.cor <- cor( HOLAnests.Active[ , prednames_hola] )
+hola.cor
+symnum(hola.cor)
+
+HOLAnests.Veg$orientYN <- as.factor(HOLAnests.Veg$orientYN)
+HOLAnests.Veg$Year<- as.factor(HOLAnests.Veg$Year)
+```
+
+### variable summary
+#### HOLA
+```{r}
+min.rec <- min(HOLAnests.Veg$rec)
+max.rec <- max(HOLAnests.Veg$rec)
+mean.rec <- mean(HOLAnests.Veg$rec)
+sd.rec <- sd(HOLAnests.Veg$rec)
+
+min.date <- min(HOLAnests.Veg$InitiationDOY)
+max.date <- max(HOLAnests.Veg$InitiationDOY)
+mean.date <- mean(HOLAnests.Veg$InitiationDOY)
+sd.date <- sd(HOLAnests.Veg$InitiationDOY)
+```
+
+### model
+```{r}
+hola.mod <- glm(surv ~ rec_std + initiate_std + orientYN + Year, family = binomial(link = logexp(days = HOLAnests.Veg$ExposureDays)), data = HOLAnests.Veg)
+
+summary(hola.mod)
+
+vif(hola.mod)
+
+library(caret)
+varImp(hola.mod)
+
+confint(hola.mod)
+```
+
+### in text
+```{r}
+coef(hola.mod)
+plogis(coef(hola.mod))
+plogis(0.4249) # intercept se
+# effect of 2021
+1 - 0.4258462
+
+# effect of orientation
+1 - 0.5483371
+
+# effect of rec
+a <- 1.79 # intercept
+b1 <- -0.42 # rec
+# all others at mean (= 0)
+rec.min.st <- (min.rec-mean.rec)/(2*sd.rec)
+rec.max.st <- (max.rec-mean.rec)/(2*sd.rec)
+plogis(a + b1*rec.min.st) - plogis(a + b1*rec.max.st)
+
+# effect of initiation date
+a <- 1.79 # intercept
+b1 <- -0.4731 # initiation
+# all others at mean (= 0)
+date.min.st <- (min.date-mean.date)/(2*sd.date)
+date.max.st <- (max.date-mean.date)/(2*sd.date)
+plogis(a + b1*date.min.st) - plogis(a + b1*date.max.st)
+```
+
+
+## LBCU
+```{r}
+LBCUnests$rec_std <- stdize(LBCUnests$NESTrec)
+LBCUnests$initiate_std <- stdize(LBCUnests$initiationDOY)
+LBCUnests$conceal_std <- stdize(LBCUnests$conceal_sum)
+LBCUnests$consp_std <- stdize(LBCUnests$consp_total)
+LBCUnests$road_std <- stdize(LBCUnests$RoadDist)
+
+LBCUnests <- LBCUnests %>% mutate(
+  Year2021 = case_when(
+    year == 2021 ~ 1, 
+    year == 2020 | year == 2019 ~ 0))
+
+str(LBCUnests$Year2021)
+LBCUnests$Year2021 <- as.factor(LBCUnests$Year2021)
+```
+
+### predictors
+```{r}
+# Site-level predictors
+prednames_lbcu <- c("NESTrec", "initiationDOY", "conceal_sum", "RoadDist", "consp_total")
+
+# loop over each to create histograms for each predictor:
+for( p in 1:length(prednames_lbcu) ){
+  # create an object with the ggplot so that you can display it 
+  # in a loop 
+  a <- ggplot( LBCUnests ) + #choose your data
+    theme_bw( base_size = 15 ) + #choose a preset theme
+    labs( x = prednames_lbcu[p] ) + #label x axis using our predictor names
+    geom_histogram( aes( get(prednames_lbcu[p]) ), bins= 10 ) #plot histogram
+  # display your plot object
+  print( a )
+}
+
+# correlation among predictors. > 0.8 would be severe, 0.6 is iffy 
+lbcu.cor <- cor( LBCUnests[ , prednames_lbcu])
+lbcu.cor
+symnum(lbcu.cor)
+```
+
+### variable summary
+```{r}
+min.rec <- min(LBCUnests$NESTrec)
+max.rec <-max(LBCUnests$NESTrec)
+mean.rec <- mean(LBCUnests$NESTrec)
+sd.rec <- sd(LBCUnests$NESTrec)
+
+min.date <- min(LBCUnests$initiationDOY)
+max.date <- max(LBCUnests$initiationDOY)
+mean.date <-mean(LBCUnests$initiationDOY)
+```
+
+
+### model
+```{r}
+lbcu.mod <-glm(surv ~ rec_std + Year2021 + consp_std, family = binomial(link = logexp(days = LBCUnests$exposure_days)), data = LBCUnests)
+
+summary(lbcu.mod)
+
+#confint(lbcu.mod)
+
+# intercept
+plogis(coef(lbcu.mod))
+plogis(0.2734)
+
+# effect of rec
+a <- 1.6312      # intercept
+b1 <- -3.0250 # rec
+# all others at mean (= 0)
+rec.min.st <- (min.rec-mean.rec)/(2*sd.rec)
+rec.max.st <- (max.rec-mean.rec)/(2*sd.rec)
+plogis(a + b1*rec.min.st) - plogis(a + b1*rec.max.st)
+```
+
+
+# Figure 
+## predictors
+```{r}
+# Range of values for predictions
+rec <- seq(10e-12, 2.5e-6,,200)
+Idate  <- seq(91, 192,,200)
+
+# standardize recreation values based on the mean & sd from the data
+rec_std <- ((rec) - mean.rec)/ (2*sd.rec)
+initiate_std <- ((Idate) - mean.date)/(2*sd.date)
+```
+
+## hola plot
+```{r}
+# rec
+NewL.rec <- data.frame(rec_std = rec_std, initiate_std = 0, orientYN = 0, Year = 2021)
+NewL.rec$orientYN <- as.factor(NewL.rec$orientYN)
+NewL.rec$Year <- as.factor(NewL.rec$Year)
+x <- predict.glm(hola.mod, NewL.rec, se.fit = TRUE)
+
+y <- as.numeric(x$fit)
+y.se <- as.numeric(x$se.fit)
+
+z <- plogis(y)
+z.se <- plogis(y.se)
+
+hola.pred <- as.data.frame(z)
+hola.pred$rec <- rec
+hola.pred$se <- y.se
+
+hola.pred$x <- 1
+
+A1 <- ggplot(data = hola.pred, mapping = aes(x = rec, y = z, 
+                                             color = as.factor(x), 
+                                             fill = as.factor(x)))+
+  geom_line(linewidth = 1) +
+  geom_ribbon(aes(ymin = z - se, ymax = pmin(1,z + se)), alpha = 0.1)+
+  ylim(0,1) +
+  scale_fill_manual(values = "grey40") +
+  scale_color_manual(values="grey40") +
+  theme_classic()+ 
+  labs(x = "Recreation intensity", y = "Predicted probability of nest survival") +
+  theme(legend.position = "none")+
+  theme(text=element_text(family="Times New Roman", size=12))
+
+
+  A1
+  
+ggsave("C:/Users/Madeline/Desktop/NEWholanest.jpg", width = 4, height = 2.5, units = "in", 
+       dpi = 400)
+
+```
+
+
+
+
+## lbcu plot
+```{r}
+newrec <- data.frame(rec_std = rec_std, consp_std = 0, Year2021 = 0)
+newrec$Year2021 <-as.factor(newrec$Year2021)
+x <- predict.glm(lbcu.mod, newrec, se.fit = TRUE)
+
+y <- as.numeric(x$fit)
+y.se <- as.numeric(x$se.fit)
+
+z <- plogis(y)
+z.se <- plogis(y.se)
+
+lbcu.pred <- as.data.frame(z)
+lbcu.pred$rec <- rec
+lbcu.pred$se <- y.se
+
+lbcu.pred$x <- 1
+
+B1 <- ggplot(data = lbcu.pred, mapping = aes(x = rec, y = z, 
+                                             color = as.factor(x), 
+                                             fill = as.factor(x)))+
+  geom_line(linewidth = 1) +
+  geom_ribbon(aes(ymin = z - se, ymax = pmin(1,z + se)), alpha = 0.1)+
+  ylim(0,1) +
+  scale_fill_manual(values = "grey40") +
+  scale_color_manual(values="grey40") +
+  theme_classic()+ 
+  labs(x = "Recreation intensity", y = "Predicted probability of nest survival") +
+  theme(legend.position = "none")+
+  theme(text=element_text(family="Times New Roman", size=12))
+
+
+  B1
+  
+ggsave("C:/Users/Madeline/Desktop/NEWlbcunest.jpg", width = 4, height = 2.5, units = "in", 
+       dpi = 400)
+
+
+```
+
+
+
+
+
+y <- as.numeric(x$fit)
+y.se <- as.numeric(x$se.fit)
+lbcu.pred <- as.data.frame(y)
+lbcu.pred$rec <- rec
+lbcu.pred$se <-y.se
+lbcu.pred$y.scale <- (lbcu.pred$y - min(lbcu.pred$y)) / (max(lbcu.pred$y) - min(lbcu.pred$y)) 
+
+B1 <- ggplot(data = lbcu.pred, mapping = aes(x = rec, y = y))+
+  geom_line() +
+  geom_ribbon(aes(ymin = y - se, ymax = y + se), alpha = 0.1)+
+  theme_classic()+ 
+  labs(title = "Long-billed curlews - Nesting success", x = "Recreation intensity", y = "Predicted probability of nest survival") +
+  theme(text=element_text(family="Times New Roman", size=12))
+  
+B1
+
+```
+
+
+
+
+
