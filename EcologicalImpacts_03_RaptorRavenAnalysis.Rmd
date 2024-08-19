@@ -9,7 +9,7 @@ output: pdf_document
 
 # LAST UPDATED: 10 Feb 2024
         # Change - ravens now using Poisson with no temp in detection model (raven.mod.p1)
-        # Change - rapotrs now not including random intercepts, no temp, Poisson (raptor.mod.p1)
+        # Change - raptors now not including random intercepts, no temp, Poisson (raptor.mod.p1)
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -43,7 +43,7 @@ We used a closed population (single-season, no migration) N-mixture analysis, wh
 
 ### Detection predictors
 * Day of Year  
-* Time (minutes past 12:00 AM)  
+* Time (minutes past sunrise)  
 * Wind speed (km per hour)  
 * Temp (Celsius)  
 
@@ -67,11 +67,11 @@ https://kenkellner.com/blog/ubms-vignette.html
 
 # Load Data
 ```{r}
-RavenSurveys <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/Ravens_Clean_29April2024.csv")
+RavenSurveys <- read.csv("C:/Users/Madeline/Desktop/JWM/FinalData/EcologicalImpacts_Ravens.csv")
 
-RaptorSurveys <-read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/Raptors_Clean_29April2024.csv")
+RaptorSurveys <-read.csv("C:/Users/Madeline/Desktop/JWM/FinalData/EcologicalImpacts_Raptors.csv")
 
-RaptorInBuffer <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/RaptorsInBuffer_Clean_29April2024.csv")
+RaptorInBuffer <- read.csv("C:/Users/Madeline/Desktop/JWM/FinalData/EcologicalImpacts_AllRaptorsObserved.csv")
 ```
 
 # Raptor sample sizes used in the text
@@ -322,8 +322,6 @@ plogis(coef(raven.mod.p1[2]))
 plogis(0.442) # intercept se
 ```
 
-
-
 ```{r}
 ### estimated abundance - intercept
 exp(coef(raven.mod.p1[1]))
@@ -338,7 +336,7 @@ rec.effect$recI_std <- ((rec.effect$rec) - rec.mean)/ (2*rec.sd)
 
 Lpred.rec <- predict(raven.mod.p1, type = "state", newdata = rec.effect) 
 
-70.55403 - 25.15055
+70.55403 - 25.15055 #(high rec pred - low rec pred)
 
 ## powerline values
 ppl.effect <- data.frame(ppl = c(ppl.min, ppl.max), 
@@ -562,7 +560,7 @@ FigRaven <- ggplot(data = Lpred.rec, mapping = aes(x=rec, y=Predicted,
   scale_color_manual(values="grey40") + 
   theme_classic() + 
   theme(legend.position = "none")+
-  labs(title = "", x = "Recreation intensity", y = "Predicted ravens/"~km^2)+
+  labs(title = "", x = "Recreation intensity", y = "Predicted ravens")+
   theme(text=element_text(family="Times New Roman", size=12))
 
 ggsave("C:/Users/Madeline/Desktop/NEWraven.jpg", width = 4, height = 2.5, units = "in", 
@@ -591,7 +589,7 @@ FigRaptor <- ggplot(data = Lpred.rec, mapping = aes(x=rec, y=Predicted,
   scale_color_manual(values="grey40") + 
   theme_classic() + 
   theme(legend.position = "none")+
-  labs(title = "", x = "Recreation intensity", y = "Predicted raptors/"~km^2)+
+  labs(title = "", x = "Recreation intensity", y = "Predicted raptors")+
   theme(text=element_text(family="Times New Roman", size=12))
 
 ggsave("C:/Users/Madeline/Desktop/NEWraptor.jpg", width = 4, height = 2.5, units = "in", 
@@ -599,7 +597,7 @@ ggsave("C:/Users/Madeline/Desktop/NEWraptor.jpg", width = 4, height = 2.5, units
 ```
 
 
-# Appendix table
+# SI table
 ```{r}
 AppendixSumm <- AppendixSumm %>% mutate(
   site = case_when(
