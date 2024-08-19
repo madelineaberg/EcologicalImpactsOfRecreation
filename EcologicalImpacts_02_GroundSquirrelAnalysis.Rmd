@@ -36,7 +36,7 @@ Using a closed population (single-season, no migration) N-mixture analysis, whic
 
 ### Detectionn predictors
 * Day of Year  
-* Time (minutes past 12:00 AM)  
+* Time (minutes past sunrise)  
 * Wind speed (km per hour)  
 * Temp (degrees Celcius)  
 * Observer experience level (> 1 year = experienced & < 1 year = novice)
@@ -51,9 +51,8 @@ Using a closed population (single-season, no migration) N-mixture analysis, whic
 This script follows the CountDataPrep.R and CountAnalysis.R scripts created by Dr. Jen Cruz, which can be accessed here: https://github.com/quantitativeconservationlab/AppPopnEco 
 
 # Load Data
-
 ```{r}
-grsqcount <- read.csv("C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/GroundSquirrel_Clean_29April2024.csv")
+grsqcount <- read.csv("C:/Users/Madeline/Desktop/JWM/FinalData/EcologicalImpacts_GroundSquirrel.csv")
 ```
 
 
@@ -252,7 +251,6 @@ confint(grsq.mod.nb, type = "det") # detection submodel
 
 ## Model Results used in the text
 ### Abundance estimates
-
 ```{r}
 lambda.hat.grsq <- predict(grsq.mod.nb, type = "state") # expected abundance for each site 
 
@@ -262,7 +260,6 @@ max(lambda.hat.grsq$Predicted)
 ```
 
 ### Detection Probability
-
 ```{r}
 plogis(coef(grsq.mod.nb[2])) # detection submodel is binomial, so a logit scale
 plogis(0.2123000) # detect intercept SE
@@ -274,7 +271,7 @@ exp(coef(grsq.mod.nb[1]))# ecological submodel is Poisson, so it's on a log scal
 exp(0.359 ) # intercept SE
 `````````
 
-# Effect of Recreation
+# Effect of Recreation (not included in text because in significant)
 ```{r}
 ## Effect of lowest vs highest recreation
 rec.effect <- data.frame(rec = c(rec.min, rec.max), 
@@ -348,12 +345,12 @@ pred$x <-1
 Fig4 <- ggplot(pred, aes(rec, Predicted, 
                          color = as.factor(x), 
                          fill = as.factor(x))) +
-  geom_line(size = 1) +
+  geom_line(linetype = 1) +
   geom_ribbon(aes(ymin = Predicted - SE, ymax = Predicted + SE), alpha = 0.1) +
   scale_fill_manual(values = "grey40") +
   scale_color_manual(values="grey40") +
   theme_classic() + 
-  labs(x = "Recreation intensity", y = "Predicted ground squirrels/ha")+
+  labs(x = "Recreation intensity", y = "Predicted ground squirrels")+
   theme(legend.position = "none") +
   theme(text=element_text(family="Times New Roman", size=12))
 
