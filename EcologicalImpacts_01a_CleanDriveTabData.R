@@ -207,7 +207,7 @@ table(route_tab$NG.weather)
 table(route_tab$month)
 
 
-
+write.csv(route_tab,"C:/Users/Madeline/Desktop/EcologicalImpactsManuscript/CleanData/DrivingRoutes_Clean_19Aug2024.csv")
 
 
 

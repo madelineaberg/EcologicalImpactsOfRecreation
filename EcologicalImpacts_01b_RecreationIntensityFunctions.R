@@ -6,8 +6,6 @@
 install.packages("maptools", repos = "https://packagemanager.posit.co/cran/2023-10-13")
 library(maptools)
 
-
-
 #### Final Workflow Goals ####
 # 1 - Load Packages
 # 2 - Load Spatial & Tabular Data * tab data should go through CleanTabData.R first * 
@@ -97,9 +95,7 @@ KD_extractsave <- function(W, P, d, E, b){
 }
 
 
-
-
-#############################33
+#############################
 #### Kernel density - extraction function + trying to save raster - splitting up ####
 ## don't like thissssss
 # currently the same as KD_extractsave
@@ -159,52 +155,3 @@ extract_save <- function(KD) {
 #file.rename(paste0(my_path, file_names_old),       # Rename files
  #           paste0(my_path, file_names_new))
 
-############################# code graveyard below ##################$
-#N = 155
-#KD_extractsave(NCA_utm, shoot.adj, 1000, PairedSites_utm, 2000, N)
-
-
-# seems to be the same....???? .grd vs .tif
-#test <- raster("/Users/madelineaberg/Desktop/Driving Analysis/raster12.grd")
-#test.tif <- raster("/Users/madelineaberg/Desktop/Driving Analysis/raster12.tif")
-
-
-## testing out ggplot with the test.tif & .grd test - both plot, need to fix scale but generally ok
-#library(ggplot2)
-# library(rasterVis)
-
-#gplot(test) + 
- # geom_tile(aes(fill=value)) +
-  #ggtitle("r1") +
-  #scale_fill_gradient2(low="red", mid="green", high="blue") 
-                     #  midpoint=mean(value),    # Value that gets the middle color (default is zero)
-                      # breaks=seq(-100,100,10))  # Set whatever breaks you want
-                      # limits=c(floor(rng[1]), ceiling(rng[2])))  # Set the same limits for each plot
-
-
-
-
-
-
-
-#test_KD <- KD_extract(NCA_utm, shoot.all, 1000, PairedSites_utm, 2000) #### WORKING 10/17/21 !!!!!!! Works w/ results from PointAdjust()
-#test_KD2 <- KD_extract(NCA, alldrive.sp.adj, 1000, PairedSites_p, 2000)
-
-#### should add a command to save the KD raster / plot somewhere #### 
-
-
-
-#### Trying to subset by time periods ####
-# just random scraps of stuff below here 
-
-#driving_all_np # format of the datasets at this point
-
-#str(driving_all_np$date)
-#min(driving_all_np$date) #2019-04-05
-#max(driving_all_np$date) #2021-07-17
-#table(driving_all_np$date)
-
-#max(driving_all_np$week)
-
-
-# testing with year (10/20/2021)
